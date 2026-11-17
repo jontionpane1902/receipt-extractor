@@ -123,19 +123,47 @@ describe("checkChange", () => {
 });
 
 describe("checkItemCount", () => {
-	test("counts pieces by default", () => {
-		expect(checkItemCount(sampleReceipt()).status).toBe("pass");
-		expect(checkItemCount(sampleReceipt({ item_count: 3 }))).toMatchObject({
+	test("by default the count is a soft signal: either reading passes", () => {
+		// Sample: 3 lines, 4 pieces.
+		expect(checkItemCount(sampleReceipt())).toMatchObject({
+			status: "pass",
+			severity: "warning",
+		});
+		expect(checkItemCount(sampleReceipt({ item_count: 3 })).status).toBe(
+			"pass",
+		);
+		expect(checkItemCount(sampleReceipt()).message).toContain("pieces");
+		expect(checkItemCount(sampleReceipt({ item_count: 3 })).message).toContain(
+			"lines",
+		);
+	});
+
+	test("by default a disagreement is a warning, not an error", () => {
+		expect(checkItemCount(sampleReceipt({ item_count: 2 }))).toMatchObject({
 			status: "fail",
-			expected: 3,
+			severity: "warning",
+			expected: 2,
 			actual: 4,
 		});
 	});
 
-	test("can count lines instead", () => {
+	test("a strict mode makes it an error for a layout whose rule is known", () => {
+		expect(checkItemCount(sampleReceipt(), "pieces")).toMatchObject({
+			status: "pass",
+			severity: "error",
+		});
+		expect(
+			checkItemCount(sampleReceipt({ item_count: 3 }), "pieces"),
+		).toMatchObject({
+			status: "fail",
+			severity: "error",
+			expected: 3,
+			actual: 4,
+		});
 		expect(
 			checkItemCount(sampleReceipt({ item_count: 3 }), "lines").status,
 		).toBe("pass");
+		expect(checkItemCount(sampleReceipt(), "lines").status).toBe("fail");
 	});
 
 	test("skips when no count is printed", () => {

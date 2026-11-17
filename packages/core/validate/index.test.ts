@@ -43,9 +43,27 @@ describe("validateReceipt", () => {
 	test("options are passed through", () => {
 		const report = validateReceipt(sampleReceipt({ item_count: 3 }), ocr, {
 			now: NOW,
-			itemCountMode: "lines",
+			itemCountMode: "pieces",
 		});
-		// 3 is not printed as a number in the OCR text, so only grounding fails.
-		expect(report.failures.map((f) => f.check)).toEqual(["grounding"]);
+		// Strict pieces mode: 4 pieces against a printed 3 is an error. (3 is
+		// also not printed as a number in the OCR text, so grounding fails too.)
+		expect(report.failures.map((f) => f.check)).toEqual([
+			"item_count",
+			"grounding",
+		]);
+		expect(report.failures[0]?.severity).toBe("error");
+	});
+
+	test("an item count that fits neither reading warns but does not block", () => {
+		const text = SAMPLE_OCR_TEXT.map((t) => t.replace("4 ชิ้น", "2 ชิ้น"));
+		const report = validateReceipt(
+			sampleReceipt({ item_count: 2 }),
+			{ lines: linesFromText(text) },
+			{ now: NOW },
+		);
+		expect(report.failures).toMatchObject([
+			{ check: "item_count", severity: "warning" },
+		]);
+		expect(report.ok).toBe(true);
 	});
 });

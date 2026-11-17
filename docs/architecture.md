@@ -102,7 +102,7 @@ worker.py → protocol.py → engine.py → official runtime/line_engine.py
 | `total_sum` | Σ line amounts − Σ discounts = total | error |
 | `vat` | VAT = total × 7/107, ±1 satang | error |
 | `change` | tendered − total = change | error |
-| `item_count` | printed count = extracted count | error |
+| `item_count` | printed count = extracted pieces or lines | warning (error only when a layout's counting rule is set explicitly) |
 | `date_parse` | date parses; Buddhist era converted | error |
 | `date_not_future` | not later than now (+10 min skew) | error |
 | `tax_id_format` | exactly 13 digits | error |
@@ -116,7 +116,12 @@ Any `error` failure makes the report not ok, which triggers the fallback.
 Known limits, all provisional until real receipts are seen:
 
 - VAT assumes every item is VATable.
-- `item_count` is assumed to mean total pieces (configurable to lines).
+- The printed item count is a soft signal. Two real receipts disagree on
+  what it counts (all pieces including promotion rows on one; neither
+  pieces nor lines on the other), so by default a disagreement is a
+  warning, and quantity recovery may use the count to confirm quantities
+  but never to deduce missing ones. Strict modes exist for a layout whose
+  rule has been established.
 - Two-digit years are ambiguous between Buddhist and Gregorian; the
   reading closest to now and not in the future wins, and is marked as
   inferred.

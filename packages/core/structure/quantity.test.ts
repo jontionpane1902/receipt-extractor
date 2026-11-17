@@ -105,53 +105,112 @@ describe("resolveQuantities", () => {
 		confidence: 0.7,
 	});
 	const p = (qty: number) => ({ qty, source: "printed" as const });
+	const PIECES = { countRule: "pieces" as const };
 
-	test("recovered quantities are low trust until the item count confirms them", () => {
-		const unverified = resolveQuantities([d(1), d(2)], null);
-		expect(unverified.status).toBe("unverified");
-		expect(unverified.quantities.map((q) => q.trust)).toEqual(["low", "low"]);
+	describe("default: the counting rule is unknown, the count is a soft signal", () => {
+		test("recovered quantities are low trust without a count", () => {
+			const result = resolveQuantities([d(1), d(2)], null);
+			expect(result.status).toBe("unverified");
+			expect(result.quantities.map((q) => q.trust)).toEqual(["low", "low"]);
+		});
 
-		const confirmed = resolveQuantities([d(1), d(2), p(1)], 4);
-		expect(confirmed.status).toBe("confirmed");
-		expect(confirmed.quantities.map((q) => [q.qty, q.source, q.trust])).toEqual(
-			[
+		test("the count can confirm quantities that are all known and add up", () => {
+			const result = resolveQuantities([d(1), d(2), p(1)], 4);
+			expect(result.status).toBe("confirmed");
+			expect(result.quantities.map((q) => [q.qty, q.source, q.trust])).toEqual([
 				[1, "dropped", "confirmed"],
 				[2, "dropped", "confirmed"],
 				[1, "printed", "normal"],
-			],
-		);
+			]);
+		});
+
+		test("the count never invents a missing quantity", () => {
+			// Under a pieces rule these would all be deduced; here nothing is.
+			for (const [items, count] of [
+				[[d(1), null, d(3), null, null], 7],
+				[[p(1), null, d(1)], 6],
+				[[null, null, null], 3],
+			] as const) {
+				const result = resolveQuantities(items, count);
+				expect(result.status).toBe("unverified");
+				expect(result.quantities.map((q) => q.qty)).toEqual(
+					items.map((item) => item?.qty ?? null),
+				);
+				expect(result.quantities.some((q) => q.source === "deduced")).toBe(
+					false,
+				);
+				expect(result.quantities.some((q) => q.trust === "confirmed")).toBe(
+					false,
+				);
+			}
+		});
+
+		test("a count that counts something else does not contradict correct quantities", () => {
+			// Seven rows worth eight pieces, but the receipt prints 5: the
+			// quantities are right and the count follows another rule.
+			const result = resolveQuantities(
+				[p(1), p(1), p(1), p(1), p(1), p(2), p(1)],
+				5,
+			);
+			expect(result.status).toBe("unverified");
+			expect(result.message).toContain("not established");
+			expect(result.quantities.map((q) => q.qty)).toEqual([
+				1, 1, 1, 1, 1, 2, 1,
+			]);
+		});
+
+		test("a count that happens to fit a wrong partial deduction is not used", () => {
+			// Two of four quantities recovered (sum 3), printed count 5: a
+			// pieces rule would "deduce" 1 + 1 and confirm everything.
+			const soft = resolveQuantities([d(1), d(2), null, null], 5);
+			expect(soft.status).toBe("unverified");
+			expect(soft.quantities.map((q) => q.qty)).toEqual([1, 2, null, null]);
+			expect(
+				resolveQuantities([d(1), d(2), null, null], 5, PIECES).status,
+			).toBe("deduced");
+		});
 	});
 
-	test("a contradiction with the printed count is a mismatch, nothing is confirmed", () => {
-		const result = resolveQuantities([d(1), d(7)], 3);
-		expect(result.status).toBe("mismatch");
-		expect(result.quantities.map((q) => q.trust)).toEqual(["low", "low"]);
-		expect(resolveQuantities([d(2), null, null], 3).status).toBe("mismatch");
-	});
+	describe("pieces rule, for a layout where the count is established", () => {
+		test("a contradiction is a mismatch, nothing is confirmed", () => {
+			const result = resolveQuantities([d(1), d(7)], 3, PIECES);
+			expect(result.status).toBe("mismatch");
+			expect(result.quantities.map((q) => q.trust)).toEqual(["low", "low"]);
+			expect(resolveQuantities([d(2), null, null], 3, PIECES).status).toBe(
+				"mismatch",
+			);
+		});
 
-	test("missing quantities are deduced as 1 when the count leaves no other option", () => {
-		const result = resolveQuantities([d(1), null, d(3), null, null], 7);
-		expect(result.status).toBe("deduced");
-		expect(result.quantities.map((q) => [q.qty, q.source])).toEqual([
-			[1, "dropped"],
-			[1, "deduced"],
-			[3, "dropped"],
-			[1, "deduced"],
-			[1, "deduced"],
-		]);
-		expect(result.quantities.every((q) => q.trust === "confirmed")).toBe(true);
-	});
+		test("missing quantities are deduced as 1 when the count leaves no other option", () => {
+			const result = resolveQuantities(
+				[d(1), null, d(3), null, null],
+				7,
+				PIECES,
+			);
+			expect(result.status).toBe("deduced");
+			expect(result.quantities.map((q) => [q.qty, q.source])).toEqual([
+				[1, "dropped"],
+				[1, "deduced"],
+				[3, "dropped"],
+				[1, "deduced"],
+				[1, "deduced"],
+			]);
+			expect(result.quantities.every((q) => q.trust === "confirmed")).toBe(
+				true,
+			);
+		});
 
-	test("a single missing quantity is the remainder", () => {
-		const result = resolveQuantities([p(1), null, d(1)], 6);
-		expect(result.status).toBe("deduced");
-		expect(result.quantities[1]).toMatchObject({ qty: 4, source: "deduced" });
-	});
+		test("a single missing quantity is the remainder", () => {
+			const result = resolveQuantities([p(1), null, d(1)], 6, PIECES);
+			expect(result.status).toBe("deduced");
+			expect(result.quantities[1]).toMatchObject({ qty: 4, source: "deduced" });
+		});
 
-	test("several missing quantities with pieces to spare are left unknown", () => {
-		const result = resolveQuantities([d(1), null, null], 5);
-		expect(result.status).toBe("unresolved");
-		expect(result.quantities.map((q) => q.qty)).toEqual([1, null, null]);
+		test("several missing quantities with pieces to spare are left unknown", () => {
+			const result = resolveQuantities([d(1), null, null], 5, PIECES);
+			expect(result.status).toBe("unresolved");
+			expect(result.quantities.map((q) => q.qty)).toEqual([1, null, null]);
+		});
 	});
 
 	test("nothing known and no count: everything stays unknown", () => {

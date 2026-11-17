@@ -93,30 +93,59 @@ export function checkChange(receipt: Receipt): CheckResult {
 }
 
 /**
- * How the printed item count is defined. Provisional until confirmed on
- * physical receipts: "pieces" = sum of quantities, "lines" = item lines.
+ * How the printed item count is defined, when that is known for a layout:
+ * "pieces" = sum of quantities, "lines" = item lines.
  */
 export type ItemCountMode = "pieces" | "lines";
 
-/** printed item count = extracted count. */
+/**
+ * Printed item count vs extracted items.
+ *
+ * Real receipts disagree on what the count means: on one layout it was
+ * every piece including zero-priced promotion rows, on another it matched
+ * neither pieces nor lines. So by default the count is a **soft signal**:
+ * it passes if it equals either reading, and a disagreement is only a
+ * warning, never a reason to reject an extraction. Pass a `mode` to make
+ * it a strict (error) check for a layout whose rule is established.
+ */
 export function checkItemCount(
 	receipt: Receipt,
-	mode: ItemCountMode = "pieces",
+	mode?: ItemCountMode,
 ): CheckResult {
+	const path = "item_count";
 	if (receipt.item_count === null) {
-		return skip("item_count", "no item count printed", { path: "item_count" });
+		return skip("item_count", "no item count printed", { path });
 	}
-	const extracted =
-		mode === "lines"
-			? receipt.items.length
-			: receipt.items.reduce((sum, item) => sum + item.qty, 0);
-	return extracted === receipt.item_count
-		? pass("item_count", `printed count matches extracted ${mode}`, {
-				path: "item_count",
-			})
+	const printed = receipt.item_count;
+	const pieces = receipt.items.reduce((sum, item) => sum + item.qty, 0);
+	const lines = receipt.items.length;
+
+	if (mode !== undefined) {
+		const extracted = mode === "lines" ? lines : pieces;
+		return extracted === printed
+			? pass("item_count", `printed count matches extracted ${mode}`, { path })
+			: fail(
+					"item_count",
+					`receipt prints ${printed} items but ${extracted} ${mode} were extracted`,
+					{ path, expected: printed, actual: extracted },
+				);
+	}
+	const matches = [
+		...(pieces === printed ? ["pieces"] : []),
+		...(lines === printed ? ["lines"] : []),
+	];
+	return matches.length > 0
+		? pass(
+				"item_count",
+				`printed count matches extracted ${matches.join(" and ")}`,
+				{
+					path,
+					severity: "warning",
+				},
+			)
 		: fail(
 				"item_count",
-				`receipt prints ${receipt.item_count} items but ${extracted} ${mode} were extracted`,
-				{ path: "item_count", expected: receipt.item_count, actual: extracted },
+				`receipt prints ${printed} items; extracted ${pieces} pieces on ${lines} lines. The counting rule is not established, so this is a warning only`,
+				{ path, severity: "warning", expected: printed, actual: pieces },
 			);
 }

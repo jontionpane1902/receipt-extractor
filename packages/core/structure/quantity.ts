@@ -117,17 +117,39 @@ export interface QuantityResolution {
 }
 
 /**
+ * What the printed item count is known to mean for this receipt.
+ * - "unknown" (default): the count may confirm quantities but never
+ *   invents or contradicts them. Real layouts differ: on one the count was
+ *   every piece including promotion rows, on another it was neither the
+ *   pieces nor the lines.
+ * - "pieces": the count is established as the sum of all row quantities.
+ *   Only then may missing quantities be deduced from it, and a different
+ *   sum reported as a mismatch.
+ */
+export type ItemCountRule = "unknown" | "pieces";
+
+export interface ResolveQuantitiesOptions {
+	countRule?: ItemCountRule;
+}
+
+/**
  * Reconciles per-item quantities (in item order, null = unknown) with the
- * printed item count, which is assumed to count pieces.
+ * printed item count.
  *
- * Deduction only happens when arithmetic leaves one answer: quantities
- * are whole numbers ≥ 1, so if the count exceeds the known sum by exactly
- * the number of missing items, each missing one is 1; and a single
- * missing item must be the remainder. Anything else is left unknown.
+ * With the default "unknown" rule the count is a soft signal: if every
+ * quantity is known and they add up to it, they are confirmed; otherwise
+ * nothing changes and the status is "unverified".
+ *
+ * With the "pieces" rule, deduction happens only when arithmetic leaves
+ * one answer: quantities are whole numbers ≥ 1, so if the count exceeds
+ * the known sum by exactly the number of missing items, each missing one
+ * is 1; and a single missing item must be the remainder. Anything else is
+ * left unknown.
  */
 export function resolveQuantities(
 	items: readonly (QuantityInput | null)[],
 	itemCount: number | null,
+	options: ResolveQuantitiesOptions = {},
 ): QuantityResolution {
 	const base: ResolvedQuantity[] = items.map((item) =>
 		item
@@ -151,6 +173,20 @@ export function resolveQuantities(
 	const remainder = itemCount - known;
 	const confirm = (list: ResolvedQuantity[]): ResolvedQuantity[] =>
 		list.map((q) => (q.trust === "low" ? { ...q, trust: "confirmed" } : q));
+
+	if (options.countRule !== "pieces") {
+		return missing === 0 && remainder === 0
+			? {
+					status: "confirmed",
+					quantities: confirm(base),
+					message: `quantities add up to the printed count ${itemCount}`,
+				}
+			: {
+					status: "unverified",
+					quantities: base,
+					message: `printed count ${itemCount} does not settle the quantities (known sum ${known}, ${missing} missing) and its counting rule is not established: nothing deduced`,
+				};
+	}
 
 	if (missing === 0) {
 		return remainder === 0
