@@ -148,6 +148,54 @@ describe("grounding with receipt-style numbers", () => {
 	});
 });
 
+describe("grounding quantities against dropped lines", () => {
+	const item = {
+		raw_name: "ขนม",
+		normalized_name: null,
+		qty: 3,
+		unit_price: null,
+		amount: 36,
+	};
+	const receipt = sampleReceipt({
+		branch: { code: null, name: null },
+		tax_id: null,
+		receipt_number: null,
+		datetime_raw: null,
+		items: [item],
+		discounts: [],
+		total: 36,
+		vat: null,
+		payment: { method: "unknown", tendered: null },
+		change: null,
+		item_count: null,
+	});
+	const lines = linesFromText(["ขนม 36.00"]);
+	const droppedLine = (text: string) => ({
+		text,
+		box: null,
+		confidence: 0.99,
+		reason: "too_short",
+	});
+
+	test("a quantity only present in a dropped line is grounded", () => {
+		expect(
+			failures(checkGrounding(receipt, { lines })).map((f) => f.path),
+		).toEqual(["items[0].qty"]);
+		expect(
+			failures(checkGrounding(receipt, { lines, dropped: [droppedLine("3")] })),
+		).toEqual([]);
+	});
+
+	test("dropped lines never ground an amount or a name", () => {
+		const bad = { ...receipt, total: 99 };
+		expect(
+			failures(
+				checkGrounding(bad, { lines, dropped: [droppedLine("99.00")] }),
+			).map((f) => f.path),
+		).toContain("total");
+	});
+});
+
 describe("helpers", () => {
 	test("squash normalises composed forms, whitespace and case", () => {
 		expect(squash(" DEMO  Tea\n")).toBe("demotea");

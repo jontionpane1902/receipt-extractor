@@ -86,7 +86,7 @@ export function lineContains(line: OcrLine, field: ExtractedField): boolean {
  */
 export function checkGrounding(
 	receipt: Receipt,
-	ocr: Pick<OcrResult, "lines">,
+	ocr: Pick<OcrResult, "lines" | "dropped">,
 ): CheckResult[] {
 	const fields = extractedFields(receipt);
 	if (fields.length === 0) {
@@ -94,11 +94,17 @@ export function checkGrounding(
 	}
 	const fullText = squash(ocr.lines.map((line) => line.text).join(" "));
 	const pageText = ocr.lines.map((line) => line.text).join("\n");
+	// Quantities and counts are often single digits, which an OCR backend
+	// may filter out as too short. Its dropped lines still count as
+	// evidence for those fields — and only for those.
+	const droppedText = (ocr.dropped ?? []).map((line) => line.text).join("\n");
 
 	return fields.map((field) => {
 		const grounded =
 			field.kind === "number"
-				? numbersFor(field, pageText).has(toSatang(field.value as number))
+				? numbersFor(field, pageText).has(toSatang(field.value as number)) ||
+					(field.role === "count" &&
+						numbersIn(droppedText).has(toSatang(field.value as number)))
 				: fullText.includes(squash(String(field.value)));
 		return grounded
 			? pass("grounding", "value appears in OCR text", { path: field.path })

@@ -4,10 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	CachedOcrProvider,
+	groupRows,
 	InMemoryOcrCacheStore,
 	type OcrLine,
 } from "@receipt-extractor/core";
-import { type CliDeps, formatText, main, toRows, USAGE } from "./cli.ts";
+import { type CliDeps, formatText, main, USAGE } from "./cli.ts";
 import { OpenThaiLocalProvider } from "./provider.ts";
 import { stubCommand } from "./test/stub.ts";
 
@@ -124,7 +125,7 @@ describe("ocr CLI with the stub worker", () => {
 	});
 });
 
-describe("toRows / formatText", () => {
+describe("groupRows / formatText", () => {
 	const line = (
 		text: string,
 		confidence: number | null,
@@ -137,7 +138,7 @@ describe("toRows / formatText", () => {
 	});
 
 	test("joins only consecutive lines that share a row", () => {
-		const rows = toRows([
+		const rows = groupRows([
 			line("กาแฟเย็น", 0.9, 0),
 			line("35.00", 1, 0),
 			line("ส่วนลด", 0.8, 1),

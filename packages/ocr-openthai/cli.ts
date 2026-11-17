@@ -10,7 +10,11 @@
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import { parseArgs } from "node:util";
-import type { OcrLine, OcrProvider, OcrResult } from "@receipt-extractor/core";
+import {
+	groupRows,
+	type OcrProvider,
+	type OcrResult,
+} from "@receipt-extractor/core";
 import { createLocalOpenThaiOcr } from "./create.ts";
 
 export const USAGE =
@@ -28,35 +32,12 @@ const MIME_TYPES: Record<string, string> = {
 	".tiff": "image/tiff",
 };
 
-export interface OcrRow {
-	/** Reading-order row number, or null when the backend gave none. */
-	row: number | null;
-	/** The row's lines joined with a space, left to right. */
-	text: string;
-	lines: OcrLine[];
-}
-
-/** Groups consecutive lines that share a row: a name and its price become one row. */
-export function toRows(lines: readonly OcrLine[]): OcrRow[] {
-	const rows: OcrRow[] = [];
-	for (const line of lines) {
-		const last = rows.at(-1);
-		if (last && line.row !== undefined && last.row === line.row) {
-			last.lines.push(line);
-			last.text += ` ${line.text}`;
-		} else {
-			rows.push({ row: line.row ?? null, text: line.text, lines: [line] });
-		}
-	}
-	return rows;
-}
-
 const conf = (value: number | null) =>
 	value === null ? " n/a " : value.toFixed(3);
 
 /** Human-readable report: one printed row per line, with each part's confidence. */
 export function formatText(path: string, result: OcrResult): string {
-	const rows = toRows(result.lines);
+	const rows = groupRows(result.lines);
 	const scores = result.lines
 		.map((line) => line.confidence)
 		.filter((c): c is number => c !== null);
@@ -93,7 +74,7 @@ export function formatText(path: string, result: OcrResult): string {
 }
 
 export function formatJson(path: string, result: OcrResult): string {
-	const rows = toRows(result.lines).map(({ row, text, lines }) => ({
+	const rows = groupRows(result.lines).map(({ row, text, lines }) => ({
 		row,
 		text,
 		min_confidence: lines.reduce<number | null>(

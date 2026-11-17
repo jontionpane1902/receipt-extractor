@@ -40,7 +40,7 @@ export interface ValidationReport {
 /** Runs every check. Pure: no I/O, no clock other than `options.now`. */
 export function validateReceipt(
 	receipt: Receipt,
-	ocr: Pick<OcrResult, "lines">,
+	ocr: Pick<OcrResult, "lines" | "dropped">,
 	options: ValidateOptions,
 ): ValidationReport {
 	const checks: CheckResult[] = [
