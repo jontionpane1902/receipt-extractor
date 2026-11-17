@@ -1,6 +1,6 @@
 # 0006 — Pending: layout-dependent schema changes
 
-Date: 2026-11-17, updated 2026-11-18 with a second receipt · Status:
+Date: 2026-11-17, updated 2026-11-18 with a second and a third receipt · Status:
 **proposed, not applied** — waiting for a current receipt
 
 ## Context
@@ -17,8 +17,13 @@ uses a visibly different layout, which confirms that waiting was right:
 several rules taken from the 2015 receipt do not hold on it. See "What
 the 2020 layout adds" below.
 
-Both receipts, their OCR text and their labels are private and are not in
-this repository; nothing below quotes them beyond generic label words.
+A third photo, **from 2014**, uses the same old layout as the 2015 one and
+agrees with it, including on the item count. Its label is provisional (not
+yet confirmed by the owner).
+
+All three receipts, their OCR text and their labels are private and are
+not in this repository; nothing below quotes them beyond generic label
+words.
 
 ## Already done (not layout-dependent)
 
@@ -77,6 +82,83 @@ print, not how a receipt is laid out:
   that photo OCR lost the whole quantity column, including from its
   dropped lines. Keep the exemption.
 - Row 9 (item count = pieces) → withdrawn, replaced by B5.
+
+## Pending: counting rule by layout (proposed, not implemented)
+
+Three receipts now give two behaviours for the printed item count:
+
+| Layout | Seen on | Totals row looks like | Count means |
+| --- | --- | --- | --- |
+| Old | 2014, 2015 | English label `Total`, count in parentheses, then the amount | Sum of all row quantities, zero-priced rows included (holds on both) |
+| New | 2020 | Thai label ยอดสุทธิ, count followed by ชิ้น, then the amount | Unknown: neither the pieces nor the rows |
+
+Proposal: detect the layout from evidence that is independent of the item
+rows, then choose the counting rule.
+
+1. `detectLayout(ocr)` returns `"old" | "new" | "unknown"` with the
+   evidence it used. Signals, each a vote:
+   - totals label: `Total` vs ยอดสุทธิ (fuzzy, since OCR damages labels);
+   - count format: `(n)` vs `n ชิ้น`;
+   - payment label: `Cash/Change` vs เงินสด/เงินทอน;
+   - presence of a separate subtotal row (ยอดรวม).
+2. `"old"` requires at least two agreeing signals and none for `"new"`;
+   anything else is `"unknown"`.
+3. Only `"old"` passes `countRule: "pieces"` to quantity recovery and the
+   strict `"pieces"` mode to the item-count check. `"new"` and `"unknown"`
+   keep the soft signal that is the default today.
+4. The detected layout and its evidence are stored with the result, so an
+   eval can report accuracy per layout.
+
+Why it is not implemented yet:
+
+- Two receipts are thin evidence for "old = pieces", and one of the two
+  labels is provisional.
+- On the 2014 photo OCR dropped the count itself and every quantity, and on
+  the 2020 photo the totals label survived only in a dropped line. The
+  detector must work from partial, damaged signals; it needs more than
+  three examples to tune and test.
+- A wrong "old" verdict would bring back exactly the over-confidence the
+  soft signal removed. The rule must fail towards `"unknown"`.
+
+What it would buy, measured on the 2015 receipt: quantities readable go
+from 5 of 10 to 10 of 10 when the count is allowed to fill the gaps.
+
+## Pending: end-of-receipt boundary (proposed, not implemented)
+
+Everything a receipt needs ends with the receipt-number/date row and the
+customer-service phone row. What follows differs every time and must never
+be extracted: a third-party coupon with a code (2015), a lucky-draw block
+with a code, terms and another phone number (2014), a member points block
+(2020).
+
+Rules tried on the cached OCR output of all three receipts:
+
+| Rule | 2014 | 2015 | 2020 | Verdict |
+| --- | --- | --- | --- | --- |
+| Cut after the **first** row containing a phone-like pattern (digits-4 digits-4 digits) | Cuts exactly the lucky-draw block | Cuts exactly the coupon block | Cuts exactly the member block | Clean on all three |
+| Cut after the receipt-number/date row | Would also drop the service phone row (harmless) | Same | **Fails**: OCR garbled the date and time, so the row is not recognised and nothing is cut | Not reliable alone |
+| Cut at a detected cut line | The dotted line is not in the OCR output as a line; a short run of Thai digit one characters appears near it | A similar run appears only among dropped lines | No cut line on this layout | Not usable |
+
+Proposal: cut after the first phone-like row **that comes after the
+payment row**, and drop both kept and dropped OCR lines below it. Fall
+back to the receipt-number/date row when no phone row is found; if neither
+is found, mark the receipt `needs_review` rather than extract from an
+unbounded page.
+
+Why it is only a proposal:
+
+- It rests on one OCR line surviving. If the first phone row is lost, a
+  later phone number inside the block to be removed (the 2014 lucky-draw
+  terms have one) becomes the cut and part of that block leaks. The
+  payment-row anchor and the fallback reduce this but are untested.
+- Three receipts, all from one chain. A receipt with a phone number in the
+  header would break "first phone-like row" without the payment anchor.
+- It belongs with the layout detector above: both read the same landmark
+  rows, and should be built and tested together on more receipts.
+
+Until it exists, the grounding check can be satisfied by text from these
+blocks: small whole numbers there (terms numbered 1 to 3, a rights count,
+a points figure) can ground a quantity or an item count by accident.
 
 ## What would settle it
 
