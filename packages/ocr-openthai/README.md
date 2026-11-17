@@ -52,6 +52,19 @@ try {
   `result.dropped` with a reason.
 - `OpenThaiLocalProvider` is the same thing without the cache.
 
+## Command line
+
+```sh
+bun run ocr <image-path>            # rows in reading order, confidence, dropped lines
+bun run ocr <image-path> --json     # full result as JSON, including boxes
+bun run ocr <image-path> --no-cache --backend onnxruntime
+```
+
+Parts of one printed row (an item name and its price) are shown on one
+line, each with its own confidence. The lines the model's own filter
+removed are listed at the end with their confidence and the reason. The
+image is read locally and the output goes to the terminal only.
+
 ## Tests
 
 ```sh

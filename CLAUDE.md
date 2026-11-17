@@ -104,6 +104,7 @@ bun run eval             # eval runner on synthetic samples (no network)
 
 bun run ocr:setup        # once: python/.venv + pinned deps + verified weights (needs uv)
 bun run test:ocr         # opt-in: real OpenThai model on the synthetic image
+bun run ocr <image> [--json] [--no-cache]   # OCR one image locally, print rows + confidence + dropped
 bun run eval --ocr openthai-local   # synthetic eval with the real local OCR
 ```
 
@@ -128,6 +129,11 @@ Run `bun run check` before every commit.
 - Never commit unredacted receipts, secrets, or model weights.
   `.gitignore` blocks `.env*`, `.dev.vars`, `*.onnx`, `models/`,
   `.cache/` and `originals/`/`unredacted/` folders; do not work around it.
+- Private images (real or third-party receipts) go only in a git-ignored
+  folder: `evals/dataset/private/` or any `private/` folder. Never commit
+  them, text extracted from them, or `bun run ocr` output; never paste
+  that text into tests, fixtures, docs or commit messages; never send
+  them to an external API.
 - Test images must be generated (see
   `packages/ocr-openthai/tools/make-synthetic-receipt.ts`), never real
   receipts.

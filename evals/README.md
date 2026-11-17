@@ -9,6 +9,7 @@ evals/
     labels/      one <id>.json per receipt (committed)
     redacted/    redacted images referenced by labels (committed, see rules)
     originals/   unredacted photos — git-ignored, never commit
+    private/     other private images for local use — git-ignored, never commit
     synthetic/   invented samples that exercise the harness only
                  (images/ holds a generated picture, not a photo)
   run/           runner, metrics, CLI

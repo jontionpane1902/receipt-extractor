@@ -120,8 +120,14 @@ runtime. Requires [uv](https://docs.astral.sh/uv/) and Python 3.11+.
 ```sh
 bun run ocr:setup                    # venv + pinned deps + verified weights
 bun run test:ocr                     # real model on a generated test image
+bun run ocr <image-path>             # OCR one image: rows, confidence, dropped lines
+bun run ocr <image-path> --json      # same, as JSON (with boxes)
 bun run eval --ocr openthai-local    # synthetic eval with real OCR
 ```
+
+`bun run ocr` reads one image on your machine and prints to the terminal
+only. Keep private images in a git-ignored folder such as
+`evals/dataset/private/`.
 
 `ocr:setup` creates a virtual environment inside the repository
 (`packages/ocr-openthai/python/.venv`), installs hash-locked dependencies
