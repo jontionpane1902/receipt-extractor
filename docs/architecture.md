@@ -66,8 +66,33 @@ interface OcrProvider {
   must say so rather than invent values. Checks treat missing confidence
   as unknown (skip), never as confident.
 
-Planned implementations: local OpenThai weights (evals), iApp hosted API
-(cloud), optional container. See decisions 0001 and 0002.
+- `row` is the reading-order row when the backend reports one. The
+  OpenThai runtime splits a line at wide gaps, so an item name and its
+  price arrive as two lines on the same row; `ocrText` joins them back.
+- `dropped` carries lines the backend read but filtered out itself.
+
+Implementations: fake (tests), local OpenThai weights (evals, see below),
+iApp hosted API (cloud, planned), optional container (planned). See
+decisions 0001, 0002 and 0005.
+
+### Local OpenThai provider
+
+```
+OpenThaiLocalProvider (TypeScript)          packages/ocr-openthai
+   │  JSON lines over stdio, one process per run
+   ▼
+worker.py → protocol.py → engine.py → official runtime/line_engine.py
+                                        (det.onnx + rec.onnx, OpenVINO)
+```
+
+- The Python side adds no OCR logic: it loads the official `LineOCR` once
+  and passes its lines through. Thresholds come from the model's own
+  `config.json`.
+- The model revision is pinned; files are verified against the repository's
+  `SHA256SUMS` on download and again at every worker start. The revision
+  and backend are part of `OcrResult.model`, and so of every eval result.
+- `CachedOcrProvider` + `DiskOcrCacheStore` cache results by image SHA-256,
+  model revision and backend. A hit starts no Python at all.
 
 ## Validation checks
 
@@ -99,6 +124,11 @@ Known limits, all provisional until real receipts are seen:
 - Grounding is necessary, not sufficient: a value can appear in the text
   and still be assigned to the wrong field.
 - The confidence threshold (0.8) is a placeholder to calibrate in evals.
+  With the local OpenThai provider it currently cannot fire: the model's
+  shipped `config.json` already drops every line below 0.8 confidence
+  (`drop_below`), so such lines never reach `lines` — they appear in
+  `dropped` instead. Whether to raise our threshold, lower the runtime's,
+  or treat dropped lines as a signal is open.
 
 ## Catalog
 

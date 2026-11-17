@@ -4,9 +4,10 @@ Turns a photo of a Thai convenience-store receipt into structured,
 validated data. 7-Eleven Thailand first.
 
 > **Status: early.** The core library (schema, OCR interface, validation
-> checks, catalog matching) and the eval harness exist and are tested. No
-> real OCR model, LLM or API is wired up yet, and there are **no accuracy
-> results yet**. See the [roadmap](#roadmap).
+> checks, catalog matching), the eval harness and a local OCR provider
+> running the open OpenThai model exist and are tested. No LLM or API is
+> wired up yet, no real receipt has been processed, and there are **no
+> accuracy results yet**. See the [roadmap](#roadmap).
 
 ## What it does
 
@@ -44,7 +45,7 @@ flowchart LR
 
 | Stage | What | Where |
 | --- | --- | --- |
-| OCR | [`iapp/OpenThai2.0-OCR-Text`](https://huggingface.co/iapp/OpenThai2.0-OCR-Text) (Apache-2.0, ONNX, CPU). Open weights locally for evals; iApp hosted API in the cloud. Behind one interface. | `packages/core/ocr` |
+| OCR | [`iapp/OpenThai2.0-OCR-Text`](https://huggingface.co/iapp/OpenThai2.0-OCR-Text) (Apache-2.0, ONNX, CPU). Open weights locally for evals; iApp hosted API in the cloud. Behind one interface. | `packages/core/ocr` (interface), `packages/ocr-openthai` (local provider) |
 | Structuring | Cheap text LLM maps OCR lines to the schema. May not rewrite names. | `packages/core/structure` (interface only) |
 | Validation | Arithmetic, date (Buddhist era → Gregorian), tax ID, grounding, OCR confidence. | `packages/core/validate` |
 | Fallback | Claude Haiku with the original image, only when checks fail. | planned |
@@ -92,7 +93,11 @@ card numbers, where and when you shop).
     receipts that fail validation (the vision fallback).
   - The text-structuring LLM provider (not chosen yet) receives OCR text,
     not the image.
-- Nothing is sent anywhere today: the current code makes no network calls.
+- Nothing is sent anywhere today. The only network access is the one-time
+  download of the public model files from Hugging Face during setup; OCR
+  itself runs on your machine.
+- OCR output is cached on disk in `.cache/ocr/` (git-ignored). It contains
+  the text of whatever was read, so treat it like the images themselves.
 - No secrets or model weights are in this repository.
 
 Details: [docs/privacy.md](docs/privacy.md).
@@ -107,6 +112,24 @@ bun run check     # lint + typecheck + tests
 bun run eval      # eval harness on synthetic samples (no network, no keys)
 ```
 
+### Local OCR (optional)
+
+Runs the open OpenThai model on your machine through its official Python
+runtime. Requires [uv](https://docs.astral.sh/uv/) and Python 3.11+.
+
+```sh
+bun run ocr:setup                    # venv + pinned deps + verified weights
+bun run test:ocr                     # real model on a generated test image
+bun run eval --ocr openthai-local    # synthetic eval with real OCR
+```
+
+`ocr:setup` creates a virtual environment inside the repository
+(`packages/ocr-openthai/python/.venv`), installs hash-locked dependencies
+into it, and downloads a pinned model revision (about 4 MB) into `models/`,
+verifying every file against the model repository's checksums. Nothing is
+installed outside the repository. Details:
+[packages/ocr-openthai/README.md](packages/ocr-openthai/README.md).
+
 ## Roadmap
 
 - [x] **M0 — Foundations.** Monorepo, provisional schema, OCR interface
@@ -114,8 +137,9 @@ bun run eval      # eval harness on synthetic samples (no network, no keys)
   on synthetic samples, CI.
 - [ ] **M1 — Real receipts.** Confirm the 7-Eleven layout from physical
   receipts, finalise the schema, label a first redacted set (easy/hard).
-- [ ] **M2 — Local OCR.** OpenThai 2.0 provider from the open weights;
-  first OCR-only numbers (CER).
+- [ ] **M2 — Local OCR.** OpenThai 2.0 provider from the open weights
+  (done: runs the official runtime in a Python worker, with a disk
+  cache); first OCR-only numbers (CER) on real receipts (not done).
 - [ ] **M3 — Structuring.** Text LLM structurer with versioned prompts;
   first end-to-end results table.
 - [ ] **M4 — Fallback.** Claude Haiku vision fallback; measure fallback

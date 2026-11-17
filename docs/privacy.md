@@ -20,6 +20,16 @@ their habits. This project treats every receipt image as personal data.
   target chain print the operator's public corporate tax ID; that number
   is deliberately not reproduced anywhere in this repository.
 
+## What stays on your machine
+
+- Model weights (`models/`) and the Python environment
+  (`packages/ocr-openthai/python/.venv`): git-ignored.
+- The OCR cache (`.cache/ocr/`): git-ignored. It stores the text read from
+  each image, keyed by the image's hash. For a real receipt that text is
+  personal data; delete the folder to remove it.
+- The only test image in the repository is generated from invented text
+  (`evals/dataset/synthetic/images/`), not photographed.
+
 ## Redaction before anything is committed
 
 1. Black out member numbers, phone numbers, names, card digits,
@@ -31,7 +41,9 @@ The planned web app will do redaction in the browser, before upload.
 
 ## Third parties that receive data
 
-Nothing is sent anywhere today — the current code makes no network calls.
+Nothing is sent anywhere today. Local OCR runs entirely on your machine;
+the only network access is downloading the public model files from Hugging
+Face during setup (no image or text is uploaded).
 When the corresponding stages are built:
 
 | Recipient | Receives | When |

@@ -47,6 +47,7 @@ changes.
 
 ```
 packages/core/{schema,ocr,structure,validate,catalog}   runtime-agnostic
+packages/ocr-openthai   local OCR provider: TS client + python/ worker
 apps/api     Elysia on Cloudflare Workers   (not built yet)
 apps/web     upload + client-side redaction (not built yet)
 evals/{dataset,run,results}
@@ -63,6 +64,28 @@ Rules for `packages/core`:
 - Tests live next to the code they cover (`foo.ts` → `foo.test.ts`).
 - Money is decimal baht in the schema; compare via `toSatang`.
 
+Local OCR (`packages/ocr-openthai`):
+
+- `OpenThaiLocalProvider` runs the model repository's **official** Python
+  runtime in one long-lived subprocess (JSON lines over stdio, model
+  loaded once). Do not re-implement OCR logic in TypeScript or Python:
+  `python/openthai_ocr/engine.py` only wraps the official `LineOCR`.
+- `python/` layers: `weights.py` (download/verify) → `engine.py` →
+  `protocol.py` (request dict → response dict) → `worker.py` (stdio). An
+  HTTP wrapper for the container milestone must reuse `protocol.handle`.
+  `protocol.ts` and `protocol.py` must change together.
+- The model revision is pinned in `python/model-pin.json`. Weights live in
+  `models/` (git-ignored), are verified against the repo's `SHA256SUMS`,
+  and are re-verified at every worker start. To move to a new revision,
+  update the pin (revision + hash of `SHA256SUMS`) in its own commit.
+- Python dependencies are hash-locked in `python/requirements.txt` and
+  installed only into `python/.venv`. Never install Python packages
+  globally. Re-lock with the command at the top of `requirements.in`.
+- OCR output is cached in `.cache/ocr/` (git-ignored), keyed by image
+  SHA-256 + model revision + backend. Treat the cache as private data.
+- Unit tests use a stub process (`test/stub-worker.ts`) and must not need
+  Python. The real model runs only in `integration.test.ts`, opt-in.
+
 Later stack (not built yet): ElysiaJS on Cloudflare Workers (the adapter
 is experimental: needs `CloudflareAdapter` and `.compile()`, no
 `.listen()`), R2 for images, D1 + Drizzle for data, Cloudflare Queues for
@@ -78,7 +101,14 @@ bun run format           # biome check --write
 bun run typecheck        # tsc --noEmit
 bun run check            # lint + typecheck + test
 bun run eval             # eval runner on synthetic samples (no network)
+
+bun run ocr:setup        # once: python/.venv + pinned deps + verified weights (needs uv)
+bun run test:ocr         # opt-in: real OpenThai model on the synthetic image
+bun run eval --ocr openthai-local   # synthetic eval with the real local OCR
 ```
+
+`bun test`, CI and the default `bun run eval` must stay offline: no
+Python, no weights, no network. Real-model tests are opt-in only.
 
 Run `bun run check` before every commit.
 
@@ -96,8 +126,11 @@ Run `bun run check` before every commit.
 ## Privacy and safety — hard rules
 
 - Never commit unredacted receipts, secrets, or model weights.
-  `.gitignore` blocks `.env*`, `.dev.vars`, `*.onnx`, `models/` and
-  `originals/`/`unredacted/` folders; do not work around it.
+  `.gitignore` blocks `.env*`, `.dev.vars`, `*.onnx`, `models/`,
+  `.cache/` and `originals/`/`unredacted/` folders; do not work around it.
+- Test images must be generated (see
+  `packages/ocr-openthai/tools/make-synthetic-receipt.ts`), never real
+  receipts.
 - Do not call paid APIs, write API keys into files, or deploy without the
   owner asking for it.
 - Third parties that receive images (iApp, Anthropic) must stay documented
