@@ -1,8 +1,10 @@
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import type { OcrProvider } from "@receipt-extractor/core";
+import { LabelSchema } from "./label.ts";
+import { evaluateOcrAgainstLabel, formatOcrLevelReport } from "./ocr-level.ts";
 import { formatRun } from "./report.ts";
-import { runSyntheticEval } from "./synthetic.ts";
+import { DATASET_DIR, runSyntheticEval } from "./synthetic.ts";
 
 const { values } = parseArgs({
 	args: Bun.argv.slice(2),
@@ -13,10 +15,13 @@ const { values } = parseArgs({
 		"ocr-backend": { type: "string" },
 		"no-ocr-cache": { type: "boolean", default: false },
 		"no-write": { type: "boolean", default: false },
+		/** OCR-level eval of one label file against its image. Prints only; never writes results. */
+		label: { type: "string" },
+		"hide-text": { type: "boolean", default: false },
 	},
 });
 
-if (values.dataset !== "synthetic") {
+if (values.label === undefined && values.dataset !== "synthetic") {
 	console.error(
 		`Dataset "${values.dataset}" is not runnable yet: only "synthetic" works until an LLM structurer and real labels exist. See evals/README.md.`,
 	);
@@ -59,6 +64,37 @@ async function openOcr(): Promise<{
 		provider: values["no-ocr-cache"] ? local.local : local.provider,
 		close: local.close,
 	};
+}
+
+if (values.label !== undefined) {
+	if (values.ocr === "fake") {
+		console.error(
+			"--label needs a real OCR provider: add --ocr openthai-local",
+		);
+		process.exit(2);
+	}
+	const label = LabelSchema.parse(await Bun.file(values.label).json());
+	if (label.image === null) {
+		console.error("label has no image");
+		process.exit(2);
+	}
+	const provider = await openOcr();
+	try {
+		if (!provider.provider) throw new Error("no OCR provider");
+		const result = await provider.provider.recognize({
+			bytes: new Uint8Array(
+				await Bun.file(join(DATASET_DIR, label.image)).arrayBuffer(),
+			),
+			mime_type: "application/octet-stream",
+		});
+		const report = await evaluateOcrAgainstLabel(label, result, new Date());
+		console.log(
+			formatOcrLevelReport(report, { showText: !values["hide-text"] }),
+		);
+	} finally {
+		await provider.close();
+	}
+	process.exit(0);
 }
 
 const ocr = await openOcr();

@@ -38,6 +38,29 @@ checks — not extraction quality. **Synthetic numbers test the harness; they ar
 not accuracy results** and their result files are git-ignored. Real runs
 arrive with the first real OCR provider and LLM structurer.
 
+### One labelled receipt, OCR only
+
+```sh
+bun run eval --label evals/dataset/private/<id>.json --ocr openthai-local
+```
+
+Reads the label's image with the local model and reports, with **no
+structuring step**:
+
+- header and totals: can each labelled value be read from the OCR output;
+- items: OCR name vs printed name (CER per item), amount, and quantity
+  with its source (printed, recovered from a dropped line, or deduced
+  from the item count);
+- every validation check, run on a receipt assembled from those readings;
+- catalog: with the true names seeded as confirmed entries, whether each
+  OCR name reaches its true name, with and without the look-alike table.
+
+The label guides where to look, so this is an upper bound for a text-only
+structurer on that OCR output, not an extraction result. It prints to the
+terminal and never writes a result file. `--hide-text` leaves out names
+and values. Labels and images of private receipts stay in a git-ignored
+`private/` folder.
+
 ## Label format (`label_version: 0.2.0-provisional`)
 
 Defined and validated by `run/label.ts` (`LabelSchema`). Provisional, like

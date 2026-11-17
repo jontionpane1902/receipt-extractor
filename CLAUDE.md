@@ -106,6 +106,7 @@ bun run ocr:setup        # once: python/.venv + pinned deps + verified weights (
 bun run test:ocr         # opt-in: real OpenThai model on the synthetic image
 bun run ocr <image> [--json] [--no-cache]   # OCR one image locally, print rows + confidence + dropped
 bun run eval --ocr openthai-local   # synthetic eval with the real local OCR
+bun run eval --label <label.json> --ocr openthai-local   # one labelled receipt, OCR-level only, prints, never writes
 ```
 
 `bun test`, CI and the default `bun run eval` must stay offline: no
