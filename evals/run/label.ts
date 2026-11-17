@@ -26,7 +26,11 @@ export const LabelSchema = z.object({
 	difficulty: DifficultySchema,
 	/** Why it is easy/hard: crumpled, faded, long, promo lines, ... */
 	tags: z.array(z.string()).default([]),
-	/** Redacted image, relative to evals/dataset/. Null for synthetic samples. */
+	/**
+	 * Image, relative to evals/dataset/: a redacted photo for real labels, a
+	 * generated picture for synthetic ones. Null when there is no image (the
+	 * sample then only runs on the fake OCR provider).
+	 */
 	image: z.string().nullable(),
 	notes: z.string().optional(),
 	expected: ExpectedReceiptSchema,

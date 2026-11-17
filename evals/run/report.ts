@@ -32,9 +32,16 @@ export function formatRun(run: EvalRun): string {
 		`schema=${run.schema_version} labels=${run.label_version} commit=${run.git_commit ?? "unknown"} at=${run.created_at}`,
 		...(run.dataset === "synthetic"
 			? [
-					"NOTE: synthetic data and fake providers. These numbers test the harness; they are not accuracy results.",
+					"NOTE: synthetic data and a canned structurer. These numbers test the harness; they are not accuracy results.",
 				]
 			: []),
+		...run.skipped.map((s) => `skipped ${s.id}: ${s.reason}`),
+		"",
+		"## OCR per receipt",
+		...run.receipts.map(
+			(r) =>
+				`  ${r.id.padEnd(36)} ${String(r.ocr.lines).padStart(3)} lines  ${r.ocr.dropped} dropped  min conf ${num(r.ocr.min_confidence, 3)}  ${num(r.ocr.duration_ms, 0).padStart(5)} ms${r.ocr.cache_hit ? " (cached)" : ""}  ${r.ocr.model}${r.failed_checks.length ? `\n      flagged: ${r.failed_checks.map((f) => `${f.check}${f.path ? `(${f.path})` : ""}`).join(", ")}` : ""}`,
+		),
 		"",
 		...summaryLines("all", run.summary.all),
 		...summaryLines("easy", run.summary.easy),

@@ -2,6 +2,7 @@ import {
 	type CatalogStore,
 	type OcrImage,
 	SCHEMA_VERSION,
+	type Structurer,
 } from "@receipt-extractor/core";
 import { type Difficulty, LABEL_VERSION, type Label } from "./label.ts";
 import {
@@ -23,6 +24,8 @@ import { type PipelineDeps, runPipeline } from "./pipeline.ts";
 export interface EvalCase {
 	label: Label;
 	image: OcrImage;
+	/** Overrides the run's structurer for this case (canned synthetic output). */
+	structurer?: Structurer;
 }
 
 export interface ReceiptResult {
@@ -43,7 +46,16 @@ export interface ReceiptResult {
 	latency_ms: number;
 	/** Model + prompt version of each structuring attempt, in order. */
 	attempts: { model: string; prompt_version: string }[];
-	ocr: { provider: string; model: string };
+	ocr: {
+		provider: string;
+		model: string;
+		lines: number;
+		/** Lines the OCR backend filtered out itself (e.g. low confidence). */
+		dropped: number;
+		min_confidence: number | null;
+		duration_ms: number;
+		cache_hit: boolean;
+	};
 }
 
 export interface Summary {
@@ -69,6 +81,8 @@ export interface EvalRun {
 	ocr_provider: string;
 	structurer: string;
 	fallback: string | null;
+	/** Label ids left out of this run, with the reason. */
+	skipped: { id: string; reason: string }[];
 	summary: { all: Summary; easy: Summary; hard: Summary };
 	receipts: ReceiptResult[];
 }
@@ -109,19 +123,28 @@ export interface RunOptions {
 	gitCommit?: string | null;
 	/** Fresh catalog per receipt, so results do not depend on case order. */
 	catalogFor: (label: Label) => CatalogStore;
+	skipped?: { id: string; reason: string }[];
 }
 
 export async function runEval(
 	cases: readonly EvalCase[],
-	deps: Omit<PipelineDeps, "catalog">,
+	deps: Omit<PipelineDeps, "catalog" | "structurer"> & {
+		structurer?: Structurer;
+	},
 	options: RunOptions,
 ): Promise<EvalRun> {
 	const receipts: ReceiptResult[] = [];
-	for (const { label, image } of cases) {
+	for (const { label, image, structurer: override } of cases) {
+		const structurer = override ?? deps.structurer;
+		if (!structurer) throw new Error(`no structurer for case ${label.id}`);
 		const result = await runPipeline(image, {
 			...deps,
+			structurer,
 			catalog: options.catalogFor(label),
 		});
+		const confidences = result.ocr.lines
+			.map((line) => line.confidence)
+			.filter((c): c is number => c !== null);
 		const fields = compareReceipt(label.expected, result.final);
 		const attempts = [result.primary, result.fallback].filter(
 			(a) => a !== null,
@@ -150,7 +173,16 @@ export async function runEval(
 				model: a.usage.model,
 				prompt_version: a.usage.prompt_version,
 			})),
-			ocr: { provider: result.ocr.provider, model: result.ocr.model },
+			ocr: {
+				provider: result.ocr.provider,
+				model: result.ocr.model,
+				lines: result.ocr.lines.length,
+				dropped: result.ocr.dropped?.length ?? 0,
+				min_confidence:
+					confidences.length === 0 ? null : Math.min(...confidences),
+				duration_ms: result.ocr.duration_ms,
+				cache_hit: result.ocr.cache_hit ?? false,
+			},
 		});
 	}
 	const only = (difficulty: Difficulty) =>
@@ -162,8 +194,10 @@ export async function runEval(
 		label_version: LABEL_VERSION,
 		git_commit: options.gitCommit ?? null,
 		ocr_provider: deps.ocr.name,
-		structurer: deps.structurer.name,
+		structurer:
+			deps.structurer?.name ?? cases[0]?.structurer?.name ?? "unknown",
 		fallback: deps.fallback?.name ?? null,
+		skipped: options.skipped ?? [],
 		summary: {
 			all: summarize(receipts),
 			easy: summarize(only("easy")),

@@ -6,17 +6,21 @@ import {
 	fakeImage,
 	InMemoryCatalogStore,
 	linesFromText,
+	type OcrProvider,
 } from "@receipt-extractor/core";
-import { ReplayStructurer } from "./fakes.ts";
+import { CannedStructurer } from "./fakes.ts";
 import { type SyntheticSample, SyntheticSampleSchema } from "./label.ts";
-import { type EvalRun, runEval } from "./runner.ts";
+import { type EvalCase, type EvalRun, runEval } from "./runner.ts";
 
-export const SYNTHETIC_DIR = join(
-	import.meta.dir,
-	"..",
-	"dataset",
-	"synthetic",
-);
+export const DATASET_DIR = join(import.meta.dir, "..", "dataset");
+export const SYNTHETIC_DIR = join(DATASET_DIR, "synthetic");
+
+const MIME_TYPES: Record<string, string> = {
+	png: "image/png",
+	jpg: "image/jpeg",
+	jpeg: "image/jpeg",
+	webp: "image/webp",
+};
 
 export async function loadSyntheticSamples(
 	dir: string = SYNTHETIC_DIR,
@@ -36,29 +40,61 @@ export async function loadSyntheticSamples(
 	return { samples, catalog };
 }
 
-/** Runs the whole eval on synthetic samples with fake OCR and a fake structurer. */
+/**
+ * Runs the eval on the synthetic samples with a canned structurer.
+ *
+ * - No `ocr` given (default): the in-memory fake provider serves each
+ *   sample's canned OCR lines. Fully offline.
+ * - `ocr` given: that provider reads the sample's image. Samples without an
+ *   image cannot be read by a real provider and are reported as skipped.
+ */
 export async function runSyntheticEval(options: {
 	now: Date;
 	gitCommit?: string | null;
 	dir?: string;
+	datasetDir?: string;
+	ocr?: OcrProvider;
 }): Promise<EvalRun> {
 	const { samples, catalog } = await loadSyntheticSamples(options.dir);
-	const ocr = new FakeOcrProvider();
-	const structurer = new ReplayStructurer();
+	const datasetDir = options.datasetDir ?? DATASET_DIR;
+	const fake = new FakeOcrProvider();
+	const cases: EvalCase[] = [];
+	const skipped: { id: string; reason: string }[] = [];
+
 	for (const sample of samples) {
-		ocr.set(sample.label.id, linesFromText(sample.ocr_lines));
-		structurer.set(sample.label.id, sample.extraction);
+		const { label } = sample;
+		const structurer = new CannedStructurer(sample.extraction);
+		if (!options.ocr) {
+			fake.set(label.id, linesFromText(sample.ocr_lines));
+			cases.push({ label, image: fakeImage(label.id), structurer });
+		} else if (label.image === null) {
+			skipped.push({
+				id: label.id,
+				reason: "no image: sample exists only as canned OCR lines",
+			});
+		} else {
+			const extension = label.image.split(".").at(-1)?.toLowerCase() ?? "";
+			cases.push({
+				label,
+				image: {
+					bytes: new Uint8Array(
+						await Bun.file(join(datasetDir, label.image)).arrayBuffer(),
+					),
+					mime_type: MIME_TYPES[extension] ?? "application/octet-stream",
+				},
+				structurer,
+			});
+		}
 	}
+
 	return runEval(
-		samples.map((sample) => ({
-			label: sample.label,
-			image: fakeImage(sample.label.id),
-		})),
-		{ ocr, structurer, now: options.now },
+		cases,
+		{ ocr: options.ocr ?? fake, now: options.now },
 		{
 			dataset: "synthetic",
 			gitCommit: options.gitCommit ?? null,
 			catalogFor: () => new InMemoryCatalogStore(catalog),
+			skipped,
 		},
 	);
 }

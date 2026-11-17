@@ -5,33 +5,23 @@ import type {
 	Structurer,
 } from "@receipt-extractor/core";
 
-const decoder = new TextDecoder();
-
 /**
- * Fake structurer: replays a canned receipt per fake image id (see
- * `fakeImage`). Stands in for the LLM so the runner has no network calls,
- * keys or cost.
+ * Fake structurer: always returns the same canned receipt, whatever the
+ * OCR text. Stands in for the LLM so the runner has no network calls, keys
+ * or cost.
  */
-export class ReplayStructurer implements Structurer {
+export class CannedStructurer implements Structurer {
 	readonly name: string;
-	readonly #byImageId = new Map<string, Receipt>();
+	readonly #receipt: Receipt;
 
-	constructor(name = "replay") {
+	constructor(receipt: Receipt, name = "canned") {
 		this.name = name;
+		this.#receipt = receipt;
 	}
 
-	set(imageId: string, receipt: Receipt): void {
-		this.#byImageId.set(imageId, receipt);
-	}
-
-	async structure(input: StructureInput): Promise<StructureOutput> {
-		const id = input.image ? decoder.decode(input.image.bytes) : "";
-		const receipt = this.#byImageId.get(id);
-		if (!receipt) {
-			throw new Error(`${this.name}: no canned extraction for image "${id}"`);
-		}
+	async structure(_input: StructureInput): Promise<StructureOutput> {
 		return {
-			receipt: structuredClone(receipt),
+			receipt: structuredClone(this.#receipt),
 			usage: {
 				model: `fake-${this.name}`,
 				prompt_version: "none",

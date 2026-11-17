@@ -70,6 +70,7 @@ export async function runPipeline(
 ): Promise<PipelineResult> {
 	const started = performance.now();
 	const ocr = await deps.ocr.recognize(image);
+	const ocrWall = performance.now() - started;
 	const primary = await attempt(deps.structurer, ocr, image, deps);
 
 	let fallback: Attempt | null = null;
@@ -85,6 +86,8 @@ export async function runPipeline(
 		final: { ...chosen.receipt, needs_review: !chosen.validation.ok },
 		used_fallback: fallback !== null,
 		cost_usd: primary.usage.cost_usd + (fallback?.usage.cost_usd ?? 0),
-		latency_ms: performance.now() - started,
+		// Count the OCR time of the original read even when the result came
+		// from the cache, so cached runs do not report flattering latency.
+		latency_ms: performance.now() - started - ocrWall + ocr.duration_ms,
 	};
 }

@@ -1,14 +1,23 @@
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import {
 	FakeOcrProvider,
 	fakeImage,
 	InMemoryCatalogStore,
 	linesFromText,
+	type OcrImage,
+	type OcrLine,
+	type OcrProvider,
+	type OcrResult,
 } from "@receipt-extractor/core";
-import { ReplayStructurer } from "./fakes.ts";
+import { CannedStructurer } from "./fakes.ts";
 import { runPipeline } from "./pipeline.ts";
 import { formatRun } from "./report.ts";
-import { loadSyntheticSamples, runSyntheticEval } from "./synthetic.ts";
+import {
+	DATASET_DIR,
+	loadSyntheticSamples,
+	runSyntheticEval,
+} from "./synthetic.ts";
 
 const NOW = new Date("2026-11-18T09:00:00+07:00");
 
@@ -16,7 +25,15 @@ describe("synthetic eval run (fake OCR, fake structurer, no network)", () => {
 	test("every synthetic sample matches the documented label format", async () => {
 		const { samples } = await loadSyntheticSamples();
 		expect(samples.length).toBeGreaterThanOrEqual(4);
-		expect(samples.every((s) => s.label.image === null)).toBe(true);
+		// Three share the generated picture; the misread sample is canned-only.
+		expect(samples.filter((s) => s.label.image !== null)).toHaveLength(3);
+		for (const sample of samples) {
+			if (sample.label.image === null) continue;
+			expect(sample.label.image.startsWith("synthetic/images/")).toBe(true);
+			expect(
+				await Bun.file(join(DATASET_DIR, sample.label.image)).exists(),
+			).toBe(true);
+		}
 	});
 
 	test("computes all metrics", async () => {
@@ -72,7 +89,7 @@ describe("synthetic eval run (fake OCR, fake structurer, no network)", () => {
 		expect(run.schema_version).toContain("provisional");
 		for (const receipt of run.receipts) {
 			expect(receipt.attempts[0]).toEqual({
-				model: "fake-replay",
+				model: "fake-canned",
 				prompt_version: "none",
 			});
 			expect(receipt.ocr.provider).toBe("fake");
@@ -93,6 +110,83 @@ describe("synthetic eval run (fake OCR, fake structurer, no network)", () => {
 	});
 });
 
+describe("synthetic eval with an image-reading OCR provider", () => {
+	/** Stands in for a real provider: reads any image as the clean sample text. */
+	class ImageOcr implements OcrProvider {
+		readonly name = "image-ocr";
+		seen: OcrImage[] = [];
+		cacheHit = false;
+
+		constructor(private readonly lines: OcrLine[]) {}
+
+		async recognize(image: OcrImage): Promise<OcrResult> {
+			this.seen.push(image);
+			return {
+				lines: structuredClone(this.lines),
+				dropped: [
+					{ text: "~", box: null, confidence: 0.3, reason: "low_confidence" },
+				],
+				provider: this.name,
+				model: "model@rev+backend",
+				duration_ms: 240,
+				cache_hit: this.cacheHit,
+			};
+		}
+	}
+
+	async function cleanLines(): Promise<OcrLine[]> {
+		const { samples } = await loadSyntheticSamples();
+		const clean = samples.find((s) => s.label.id.includes("clean"));
+		if (!clean) throw new Error("clean sample missing");
+		return linesFromText(clean.ocr_lines);
+	}
+
+	test("reads each sample's image and skips samples that have none", async () => {
+		const ocr = new ImageOcr(await cleanLines());
+		const run = await runSyntheticEval({ now: NOW, ocr });
+
+		expect(run.ocr_provider).toBe("image-ocr");
+		expect(run.receipts.map((r) => r.id)).toEqual([
+			"synthetic-001-clean",
+			"synthetic-002-wrong-total",
+			"synthetic-004-wrong-payment-method",
+		]);
+		expect(run.skipped).toMatchObject([{ id: "synthetic-003-misread-name" }]);
+		expect(ocr.seen).toHaveLength(3);
+		// Real image bytes were passed, not a fake id: PNG signature.
+		expect([...(ocr.seen[0]?.bytes.slice(0, 4) ?? [])]).toEqual([
+			0x89, 0x50, 0x4e, 0x47,
+		]);
+		expect(ocr.seen[0]?.mime_type).toBe("image/png");
+		expect(run.summary.all.checks).toMatchObject({
+			caught: 1,
+			missed: 1,
+			clean: 1,
+		});
+	});
+
+	test("records OCR provenance and counts cached OCR time in latency", async () => {
+		const ocr = new ImageOcr(await cleanLines());
+		ocr.cacheHit = true;
+		const run = await runSyntheticEval({ now: NOW, ocr });
+		for (const receipt of run.receipts) {
+			expect(receipt.ocr).toMatchObject({
+				provider: "image-ocr",
+				model: "model@rev+backend",
+				lines: 11,
+				dropped: 1,
+				duration_ms: 240,
+				cache_hit: true,
+			});
+			expect(receipt.ocr.min_confidence).toBeCloseTo(0.97, 5);
+			// The provider answered instantly, but the original read took 240 ms.
+			expect(receipt.latency_ms).toBeGreaterThanOrEqual(240);
+		}
+		expect(formatRun(run)).toContain("(cached)");
+		expect(formatRun(run)).toContain("skipped synthetic-003-misread-name");
+	});
+});
+
 describe("runPipeline fallback", () => {
 	test("falls back when checks fail, and reports needs_review if still failing", async () => {
 		const { samples, catalog } = await loadSyntheticSamples();
@@ -101,10 +195,8 @@ describe("runPipeline fallback", () => {
 		if (!bad || !good) throw new Error("synthetic samples missing");
 
 		const ocr = new FakeOcrProvider({ x: linesFromText(bad.ocr_lines) });
-		const primary = new ReplayStructurer("primary");
-		primary.set("x", bad.extraction);
-		const fixing = new ReplayStructurer("vision");
-		fixing.set("x", good.extraction);
+		const primary = new CannedStructurer(bad.extraction, "primary");
+		const fixing = new CannedStructurer(good.extraction, "vision");
 		const deps = {
 			ocr,
 			structurer: primary,

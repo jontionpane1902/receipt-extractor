@@ -4,7 +4,7 @@
 		"id": "synthetic-002-wrong-total",
 		"difficulty": "hard",
 		"tags": ["synthetic"],
-		"image": null,
+		"image": "synthetic/images/synthetic-receipt.png",
 		"notes": "Structurer takes the cash line as the total. Arithmetic checks should catch it.",
 		"expected": {
 			"store_chain": "7-eleven",

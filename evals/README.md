@@ -10,6 +10,7 @@ evals/
     redacted/    redacted images referenced by labels (committed, see rules)
     originals/   unredacted photos — git-ignored, never commit
     synthetic/   invented samples that exercise the harness only
+                 (images/ holds a generated picture, not a photo)
   run/           runner, metrics, CLI
   results/       one JSON file per run
 ```
@@ -17,13 +18,22 @@ evals/
 ## Running
 
 ```sh
-bun run eval                 # synthetic samples, fake OCR + fake structurer
-bun run eval --no-write      # print only
+bun run eval                        # synthetic samples, fake OCR + canned structurer
+bun run eval --no-write             # print only
+bun run eval --ocr openthai-local   # same samples, real local OCR on their image
 ```
 
-Only the `synthetic` dataset is runnable today. It uses the in-memory fake
-OCR provider and a structurer that replays canned output, so it needs no
-model, network or API key. **Synthetic numbers test the harness; they are
+Only the `synthetic` dataset is runnable today. By default it uses the
+in-memory fake OCR provider and a structurer that returns canned output,
+so it needs no model, network or API key.
+
+`--ocr openthai-local` reads each sample's image with the real OpenThai
+model (run `bun run ocr:setup` once). Samples without an image are
+skipped. OCR output is cached in `.cache/ocr/` by image hash and model
+revision, so repeat runs do not re-run OCR; `--no-ocr-cache` bypasses the
+cache and `--ocr-backend openvino|onnxruntime` forces a backend. The
+structurer is still canned, so this exercises OCR, grounding and the
+checks — not extraction quality. **Synthetic numbers test the harness; they are
 not accuracy results** and their result files are git-ignored. Real runs
 arrive with the first real OCR provider and LLM structurer.
 

@@ -4,7 +4,7 @@
 		"id": "synthetic-001-clean",
 		"difficulty": "easy",
 		"tags": ["synthetic"],
-		"image": null,
+		"image": "synthetic/images/synthetic-receipt.png",
 		"notes": "Clean OCR, correct extraction. Nothing should be flagged.",
 		"expected": {
 			"store_chain": "7-eleven",

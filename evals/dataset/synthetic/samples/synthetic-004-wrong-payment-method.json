@@ -4,7 +4,7 @@
 		"id": "synthetic-004-wrong-payment-method",
 		"difficulty": "easy",
 		"tags": ["synthetic"],
-		"image": null,
+		"image": "synthetic/images/synthetic-receipt.png",
 		"notes": "Structurer reports card instead of cash. No check covers this, so it is a deliberate miss.",
 		"expected": {
 			"store_chain": "7-eleven",
