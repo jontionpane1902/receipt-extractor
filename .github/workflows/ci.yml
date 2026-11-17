@@ -20,6 +20,8 @@ jobs:
       - run: bun run lint
       - run: bun run typecheck
       - run: bun test
+      - name: Python unit tests for the OCR worker (standard library only, no model)
+        run: python3 -m unittest discover -s packages/ocr-openthai/python/tests -t packages/ocr-openthai/python
       - name: Eval runner smoke test (synthetic data, fake providers, no network)
         run: bun run eval --dataset synthetic --no-write
 
