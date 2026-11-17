@@ -1,0 +1,154 @@
+{
+	"label": {
+		"label_version": "0.1.0-provisional",
+		"id": "synthetic-002-wrong-total",
+		"difficulty": "hard",
+		"tags": ["synthetic"],
+		"image": null,
+		"notes": "Structurer takes the cash line as the total. Arithmetic checks should catch it.",
+		"expected": {
+			"store_chain": "7-eleven",
+			"branch": {
+				"code": "00000",
+				"name": "สาขาทดสอบ"
+			},
+			"tax_id": "9012345678902",
+			"receipt_number": "R#0000012345",
+			"datetime": "2026-08-15T14:05:00+07:00",
+			"items": [
+				{
+					"raw_name": "น้ำดื่มตราทดสอบ 600มล",
+					"normalized_name": null,
+					"qty": 2,
+					"unit_price": 7,
+					"amount": 14
+				},
+				{
+					"raw_name": "ขนมข้าวพองสมมติ 48ก",
+					"normalized_name": "ขนมข้าวพองสมมติ 48ก",
+					"qty": 1,
+					"unit_price": 20,
+					"amount": 20
+				},
+				{
+					"raw_name": "ชาเย็นหอม DEMO TEA",
+					"normalized_name": null,
+					"qty": 1,
+					"unit_price": 35,
+					"amount": 35
+				}
+			],
+			"discounts": [
+				{
+					"raw_label": "ส่วนลด",
+					"amount": 5
+				}
+			],
+			"total": 64,
+			"vat": 4.19,
+			"payment": {
+				"method": "cash",
+				"tendered": 100
+			},
+			"change": 36,
+			"item_count": 4
+		}
+	},
+	"ocr_lines": [
+		{
+			"text": "DemoMart สาขาทดสอบ (00000)",
+			"confidence": 0.97
+		},
+		{
+			"text": "TAX ID 9012345678902",
+			"confidence": 0.97
+		},
+		{
+			"text": "R#0000012345 15/08/69 14:05",
+			"confidence": 0.97
+		},
+		{
+			"text": "น้ำดื่มตราทดสอบ 600มล 2 @7.00 14.00",
+			"confidence": 0.97
+		},
+		{
+			"text": "ขนมข้าวพองสมมติ 48ก 20.00",
+			"confidence": 0.97
+		},
+		{
+			"text": "ชาเย็นหอม DEMO TEA 35.00",
+			"confidence": 0.97
+		},
+		{
+			"text": "ส่วนลด -5.00",
+			"confidence": 0.97
+		},
+		{
+			"text": "ยอดสุทธิ 4 ชิ้น 64.00",
+			"confidence": 0.97
+		},
+		{
+			"text": "VAT 7% 4.19",
+			"confidence": 0.97
+		},
+		{
+			"text": "เงินสด 100.00",
+			"confidence": 0.97
+		},
+		{
+			"text": "เงินทอน 36.00",
+			"confidence": 0.97
+		}
+	],
+	"extraction": {
+		"schema_version": "0.1.0-provisional",
+		"store_chain": "7-eleven",
+		"branch": {
+			"code": "00000",
+			"name": "สาขาทดสอบ"
+		},
+		"tax_id": "9012345678902",
+		"receipt_number": "R#0000012345",
+		"datetime_raw": "15/08/69 14:05",
+		"datetime": null,
+		"items": [
+			{
+				"raw_name": "น้ำดื่มตราทดสอบ 600มล",
+				"normalized_name": null,
+				"qty": 2,
+				"unit_price": 7,
+				"amount": 14
+			},
+			{
+				"raw_name": "ขนมข้าวพองสมมติ 48ก",
+				"normalized_name": null,
+				"qty": 1,
+				"unit_price": 20,
+				"amount": 20
+			},
+			{
+				"raw_name": "ชาเย็นหอม DEMO TEA",
+				"normalized_name": null,
+				"qty": 1,
+				"unit_price": 35,
+				"amount": 35
+			}
+		],
+		"discounts": [
+			{
+				"raw_label": "ส่วนลด",
+				"amount": 5
+			}
+		],
+		"total": 100,
+		"vat": 4.19,
+		"payment": {
+			"method": "cash",
+			"tendered": 100
+		},
+		"change": 36,
+		"item_count": 4,
+		"field_confidence": {},
+		"needs_review": false
+	}
+}
