@@ -1,6 +1,6 @@
 # 0006 — Pending: layout-dependent schema changes
 
-Date: 2026-11-18 · Status: **proposed, not applied** — waiting for a
+Date: 2026-11-17 · Status: **proposed, not applied** — waiting for a
 current receipt
 
 ## Context
