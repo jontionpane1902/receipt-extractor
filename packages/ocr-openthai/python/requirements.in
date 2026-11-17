@@ -1,0 +1,8 @@
+# Runtime dependencies of the official iapp/OpenThai2.0-OCR-Text runtime
+# (runtime/line_engine.py). Edit here, then re-lock:
+#   uv pip compile requirements.in -o requirements.txt --generate-hashes --universal --python-version 3.11
+openvino
+onnxruntime
+opencv-python-headless
+pyclipper
+numpy

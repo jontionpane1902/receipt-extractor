@@ -1,0 +1,16 @@
+{
+	"repo": "iapp/OpenThai2.0-OCR-Text",
+	"revision": "40e8e9ff752b65153b1a71d521ec9390882afd7e",
+	"sha256sums_sha256": "dec369c0dec3560fc4dc36f45e0dac4978cb6db4c2c878f9d9592fee154c0ac0",
+	"files": [
+		"det.onnx",
+		"det.yml",
+		"rec.onnx",
+		"rec_dict.txt",
+		"config.json",
+		"NOTICE",
+		"runtime/__init__.py",
+		"runtime/line_engine.py",
+		"runtime/thai_norm.py"
+	]
+}

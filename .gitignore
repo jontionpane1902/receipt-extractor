@@ -35,3 +35,6 @@ evals/results/synthetic-*.json
 # python (local OCR provider, later)
 .venv/
 __pycache__/
+
+# OCR result cache (OCR text of receipts is as private as the receipts)
+.cache/
