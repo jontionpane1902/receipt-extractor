@@ -141,6 +141,22 @@ last price, times seen and status. Matching order:
    the same unit price, **and** has grapheme-cluster similarity ≥ 0.85.
 3. Two candidates tie → no match.
 
+Similarity for step 2 uses a small **look-alike table**: characters that
+thermal print makes OCR confuse cost 0.25 of an edit instead of 1 when
+they are swapped inside an otherwise identical cluster.
+
+| Group | Why |
+| --- | --- |
+| ข / ช | differ by the notch on the head |
+| พ / ฟ / ห | differ by the tail or middle stroke |
+| ด / ต | differ by the notch on the head |
+| ื / ี | upper vowels one small stroke apart |
+
+The table only changes how similar two names look. The trust floor, the
+same-price rule and the tie rule are unchanged, and `matchName` accepts
+`lookalikes: NO_LOOKALIKES` to switch it off. Add a group only with
+evidence from real OCR output.
+
 `raw_name` is never changed. A wrong correction is treated as worse than
 no correction. See decision 0003.
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { sampleReceipt } from "../schema/fixtures.ts";
 import { matchName, normalizeItems, observeName } from "./match.ts";
+import { NO_LOOKALIKES } from "./similarity.ts";
 import { type CatalogEntry, InMemoryCatalogStore } from "./store.ts";
 
 const CHAIN = "7-eleven" as const;
@@ -90,6 +91,68 @@ describe("matchName", () => {
 		]);
 		const result = await matchName(store, CHAIN, MISREAD, 20);
 		expect(result.normalized_name).toBe(GOOD);
+	});
+});
+
+describe("matchName with look-alike substitutions (invented names)", () => {
+	// 11 grapheme clusters. Three look-alike misreads: ข→ช, ด→ต, ฟ→ห.
+	const TRUE_NAME = "ขนมดาวฟ้าทอง";
+	const NOISY = "ชนมตาวห้าทอง";
+	// A different product: three real character differences, same length.
+	const OTHER_PRODUCT = "กนมลาวม้าทอง";
+	const store = () =>
+		new InMemoryCatalogStore([entry({ name: TRUE_NAME, status: "confirmed" })]);
+
+	test("a noisy reading does not match by plain edit distance", async () => {
+		const result = await matchName(store(), CHAIN, NOISY, 20, {
+			lookalikes: NO_LOOKALIKES,
+		});
+		expect(result.kind).toBe("none");
+	});
+
+	test("the same reading matches its true name with the default table", async () => {
+		const result = await matchName(store(), CHAIN, NOISY, 20);
+		expect(result).toMatchObject({ kind: "fuzzy", normalized_name: TRUE_NAME });
+		expect(result.similarity).toBeCloseTo(1 - 0.75 / 11, 10);
+	});
+
+	test("a name with as many real differences is not merged at the same threshold", async () => {
+		expect((await matchName(store(), CHAIN, OTHER_PRODUCT, 20)).kind).toBe(
+			"none",
+		);
+	});
+
+	test("two catalog products one real character apart stay distinct", async () => {
+		const both = new InMemoryCatalogStore([
+			entry({ name: "ขนมดาวฟ้าทอง 40ก", status: "confirmed" }),
+			entry({ name: "ขนมดาวฟ้าทอง 90ก", status: "confirmed" }),
+		]);
+		// Look-alike noise on the name, the distinguishing digit read correctly.
+		const result = await matchName(both, CHAIN, "ชนมตาวห้าทอง 90ก", 20);
+		expect(result).toMatchObject({
+			kind: "fuzzy",
+			normalized_name: "ขนมดาวฟ้าทอง 90ก",
+		});
+	});
+
+	test("the safety floors still apply", async () => {
+		const rarelySeen = new InMemoryCatalogStore([
+			entry({ name: TRUE_NAME, times_seen: 2 }),
+		]);
+		expect((await matchName(rarelySeen, CHAIN, NOISY, 20)).kind).toBe("none");
+		expect((await matchName(store(), CHAIN, NOISY, 25)).kind).toBe("none");
+		expect((await matchName(store(), CHAIN, NOISY, null)).kind).toBe("none");
+	});
+
+	test("look-alike twins at the same price are refused as ambiguous", async () => {
+		const twins = new InMemoryCatalogStore([
+			entry({ name: "ขนมดาว", status: "confirmed" }),
+			entry({ name: "ชนมดาว", status: "confirmed" }),
+		]);
+		const result = await matchName(twins, CHAIN, "หนมดาว", 20, {
+			minSimilarity: 0.8,
+		});
+		expect(result.kind).toBe("none");
 	});
 });
 

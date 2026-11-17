@@ -1,5 +1,9 @@
 import { type Receipt, type StoreChain, toSatang } from "../schema/receipt.ts";
-import { similarity } from "./similarity.ts";
+import {
+	DEFAULT_LOOKALIKES,
+	type LookalikeGroup,
+	similarity,
+} from "./similarity.ts";
 import type { CatalogEntry, CatalogStore } from "./store.ts";
 
 export interface MatchOptions {
@@ -10,11 +14,18 @@ export interface MatchOptions {
 	 * fuzzy-match target. Values below MIN_TIMES_SEEN_FLOOR are raised to it.
 	 */
 	minTimesSeen: number;
+	/**
+	 * Look-alike characters that cost less than a full edit. Pass
+	 * NO_LOOKALIKES for plain edit distance. This only changes how similar
+	 * two names look: the trust, same-price and tie rules still apply.
+	 */
+	lookalikes: readonly LookalikeGroup[];
 }
 
 export const DEFAULT_MATCH_OPTIONS: MatchOptions = {
 	minSimilarity: 0.85,
 	minTimesSeen: 5,
+	lookalikes: DEFAULT_LOOKALIKES,
 };
 
 /**
@@ -68,7 +79,7 @@ export async function matchName(
 	unitPrice: number | null,
 	options: Partial<MatchOptions> = {},
 ): Promise<MatchResult> {
-	const { minSimilarity, minTimesSeen } = {
+	const { minSimilarity, minTimesSeen, lookalikes } = {
 		...DEFAULT_MATCH_OPTIONS,
 		...options,
 	};
@@ -90,7 +101,10 @@ export async function matchName(
 	const candidates = (await store.list(chain))
 		.filter((entry) => isTrusted(entry, minTimesSeen))
 		.filter((entry) => toSatang(entry.last_price) === price)
-		.map((entry) => ({ entry, score: similarity(rawName, entry.name) }))
+		.map((entry) => ({
+			entry,
+			score: similarity(rawName, entry.name, { lookalikes }),
+		}))
 		.filter((candidate) => candidate.score >= minSimilarity)
 		.sort((a, b) => b.score - a.score);
 
