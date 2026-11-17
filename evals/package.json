@@ -1,0 +1,9 @@
+{
+	"name": "@receipt-extractor/evals",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"dependencies": {
+		"@receipt-extractor/core": "workspace:*"
+	}
+}

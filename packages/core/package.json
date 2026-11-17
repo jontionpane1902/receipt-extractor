@@ -1,0 +1,17 @@
+{
+	"name": "@receipt-extractor/core",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./index.ts",
+		"./schema": "./schema/index.ts",
+		"./ocr": "./ocr/index.ts",
+		"./structure": "./structure/index.ts",
+		"./validate": "./validate/index.ts",
+		"./catalog": "./catalog/index.ts"
+	},
+	"dependencies": {
+		"zod": "^4.6.7"
+	}
+}
