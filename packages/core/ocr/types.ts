@@ -27,6 +27,17 @@ export interface OcrLine {
 	 * null as "unknown", never as high confidence.
 	 */
 	confidence: number | null;
+	/**
+	 * Reading-order row, when the backend reports one. Several lines can share
+	 * a row: a receipt's item name and its price are usually two lines on the
+	 * same row.
+	 */
+	row?: number;
+}
+
+/** A line the backend read but filtered out (e.g. below its confidence floor). */
+export interface OcrDroppedLine extends OcrLine {
+	reason: string;
 }
 
 export interface OcrResult {
@@ -36,8 +47,15 @@ export interface OcrResult {
 	provider: string;
 	/** Model name/version as reported by the provider. */
 	model: string;
-	/** Wall-clock time spent in the provider. */
+	/**
+	 * Wall-clock time the provider spent reading this image. A cached result
+	 * keeps the time of the original read, so latency numbers stay honest.
+	 */
 	duration_ms: number;
+	/** Lines the backend discarded, when it reports them. Not part of `lines`. */
+	dropped?: OcrDroppedLine[];
+	/** True when the result came from a cache instead of running the model. */
+	cache_hit?: boolean;
 }
 
 export interface OcrImage {
@@ -51,7 +69,21 @@ export interface OcrProvider {
 	recognize(image: OcrImage): Promise<OcrResult>;
 }
 
-/** All line texts joined with newlines, for grounding checks and prompts. */
+/**
+ * The page as text, for grounding checks and prompts: one printed row per
+ * text line. Lines that share a `row` are joined with a space; lines without
+ * a row each get their own text line.
+ */
 export function ocrText(result: Pick<OcrResult, "lines">): string {
-	return result.lines.map((line) => line.text).join("\n");
+	const rows: string[] = [];
+	let previousRow: number | undefined;
+	for (const line of result.lines) {
+		if (line.row !== undefined && line.row === previousRow) {
+			rows[rows.length - 1] += ` ${line.text}`;
+		} else {
+			rows.push(line.text);
+		}
+		previousRow = line.row;
+	}
+	return rows.join("\n");
 }
