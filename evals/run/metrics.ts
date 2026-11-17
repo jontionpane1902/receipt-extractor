@@ -69,6 +69,54 @@ export function compareReceipt(
 	return outcomes;
 }
 
+/**
+ * Splits outcomes into the fields the labeller was sure of and the ones
+ * flagged `uncertain` in the label (paths like "branch.name" or
+ * "items[2].raw_name"; "discounts" covers the discount total).
+ */
+export function splitUncertain(
+	outcomes: FieldOutcomes,
+	uncertain: readonly string[],
+): { certain: FieldOutcomes; uncertain: FieldOutcomes } {
+	const scalar = new Set<string>();
+	const perItem = new Map<string, Set<number>>();
+	for (const path of uncertain) {
+		const item = /^items\[(\d+)\]\.(\w+)$/.exec(path);
+		if (item) {
+			const key = `items.${item[2]}`;
+			perItem.set(key, (perItem.get(key) ?? new Set()).add(Number(item[1])));
+		} else {
+			scalar.add(path === "discounts" ? "discounts.total" : path);
+		}
+	}
+	const certain: FieldOutcomes = {};
+	const flagged: FieldOutcomes = {};
+	for (const [field, list] of Object.entries(outcomes)) {
+		if (scalar.has(field)) {
+			flagged[field] = list;
+			continue;
+		}
+		const indexes = perItem.get(field);
+		certain[field] = list.filter((_, i) => !indexes?.has(i));
+		const moved = list.filter((_, i) => indexes?.has(i));
+		if (moved.length > 0) flagged[field] = moved;
+	}
+	return { certain, uncertain: flagged };
+}
+
+/** Item positions flagged uncertain for one item field, e.g. "raw_name". */
+export function uncertainItems(
+	uncertain: readonly string[],
+	...fields: string[]
+): Set<number> {
+	const indexes = new Set<number>();
+	for (const path of uncertain) {
+		const item = /^items\[(\d+)\]\.(\w+)$/.exec(path);
+		if (item?.[2] && fields.includes(item[2])) indexes.add(Number(item[1]));
+	}
+	return indexes;
+}
+
 export function isFullyCorrect(outcomes: FieldOutcomes): boolean {
 	return Object.values(outcomes).every((list) => list.every(Boolean));
 }
@@ -116,18 +164,34 @@ export interface CerCounts {
 export function rawNameCer(
 	expected: ExpectedReceipt,
 	actual: Receipt,
+	/** Only these item positions (default: all). */
+	only?: (index: number) => boolean,
 ): CerCounts {
 	let edits = 0;
 	let length = 0;
-	expected.items.forEach((want, index) => {
+	rawNameCerByItem(expected, actual).forEach((item, index) => {
+		if (only && !only(index)) return;
+		edits += item.edits;
+		length += item.length;
+	});
+	return { edits, length };
+}
+
+/** CER inputs per expected item, in label order. */
+export function rawNameCerByItem(
+	expected: ExpectedReceipt,
+	actual: Pick<Receipt, "items">,
+): CerCounts[] {
+	return expected.items.map((want, index) => {
 		const reference = graphemes(want.raw_name.normalize("NFC"));
 		const hypothesis = graphemes(
 			(actual.items[index]?.raw_name ?? "").normalize("NFC"),
 		);
-		edits += editDistance(reference, hypothesis);
-		length += reference.length;
+		return {
+			edits: editDistance(reference, hypothesis),
+			length: reference.length,
+		};
 	});
-	return { edits, length };
 }
 
 /** Per expected item: does normalized_name equal the labelled catalog name (null = "no match expected"). */

@@ -22,6 +22,16 @@ function summaryLines(name: string, s: Summary): string[] {
 			([field, r]) =>
 				`  ${field.padEnd(18)} ${pct(r.rate).padStart(6)} (${r.correct}/${r.total})`,
 		),
+		...(s.uncertain.fields === 0
+			? []
+			: [
+					`uncertain in the label (excluded from everything above): ${s.uncertain.fields} field(s)`,
+					`  raw name CER ${pct(s.uncertain.raw_name_cer)}, catalog match ${pct(s.uncertain.catalog_match_accuracy.rate)}`,
+					...Object.entries(s.uncertain.field_accuracy).map(
+						([field, r]) =>
+							`  ${field.padEnd(18)} ${pct(r.rate).padStart(6)} (${r.correct}/${r.total})`,
+					),
+				]),
 		"",
 	];
 }

@@ -18,6 +18,8 @@ import {
 	type Ratio,
 	ratio,
 	rawNameCer,
+	splitUncertain,
+	uncertainItems,
 } from "./metrics.ts";
 import { type PipelineDeps, runPipeline } from "./pipeline.ts";
 
@@ -31,10 +33,15 @@ export interface EvalCase {
 export interface ReceiptResult {
 	id: string;
 	difficulty: Difficulty;
+	/** Outcomes for fields the labeller was sure of. All main numbers use these. */
 	fields: FieldOutcomes;
+	/** Outcomes for fields flagged uncertain in the label. Reported separately. */
+	uncertain_fields: FieldOutcomes;
 	fully_correct: boolean;
 	raw_name_cer: { edits: number; length: number };
+	raw_name_cer_uncertain: { edits: number; length: number };
 	catalog: boolean[];
+	catalog_uncertain: boolean[];
 	used_fallback: boolean;
 	needs_review: boolean;
 	/** First-pass extraction differed from the label. */
@@ -65,6 +72,16 @@ export interface Summary {
 	/** Raw-name character error rate over grapheme clusters; lower is better. */
 	raw_name_cer: number | null;
 	catalog_match_accuracy: Ratio;
+	/**
+	 * Fields flagged uncertain by the labeller: excluded from everything
+	 * above and scored here on their own.
+	 */
+	uncertain: {
+		fields: number;
+		field_accuracy: Record<string, Ratio>;
+		raw_name_cer: number | null;
+		catalog_match_accuracy: Ratio;
+	};
 	fallback_rate: number | null;
 	needs_review_rate: number | null;
 	cost_usd: Distribution;
@@ -100,6 +117,7 @@ export function summarize(results: readonly ReceiptResult[]): Summary {
 			results.length,
 		),
 		field_accuracy: fieldAccuracy(results.map((r) => r.fields)),
+		uncertain: summarizeUncertain(results),
 		raw_name_cer: length === 0 ? null : edits / length,
 		catalog_match_accuracy: ratio(
 			catalog.filter(Boolean).length,
@@ -114,6 +132,30 @@ export function summarize(results: readonly ReceiptResult[]): Summary {
 				wrong: r.primary_wrong,
 				flagged: r.primary_flagged,
 			})),
+		),
+	};
+}
+
+function summarizeUncertain(
+	results: readonly ReceiptResult[],
+): Summary["uncertain"] {
+	const edits = results.reduce(
+		(sum, r) => sum + r.raw_name_cer_uncertain.edits,
+		0,
+	);
+	const length = results.reduce(
+		(sum, r) => sum + r.raw_name_cer_uncertain.length,
+		0,
+	);
+	const catalog = results.flatMap((r) => r.catalog_uncertain);
+	const accuracy = fieldAccuracy(results.map((r) => r.uncertain_fields));
+	return {
+		fields: Object.values(accuracy).reduce((sum, r) => sum + r.total, 0),
+		field_accuracy: accuracy,
+		raw_name_cer: length === 0 ? null : edits / length,
+		catalog_match_accuracy: ratio(
+			catalog.filter(Boolean).length,
+			catalog.length,
 		),
 	};
 }
@@ -145,7 +187,17 @@ export async function runEval(
 		const confidences = result.ocr.lines
 			.map((line) => line.confidence)
 			.filter((c): c is number => c !== null);
-		const fields = compareReceipt(label.expected, result.final);
+		const { certain: fields, uncertain: uncertainFields } = splitUncertain(
+			compareReceipt(label.expected, result.final),
+			label.uncertain,
+		);
+		const unsureName = uncertainItems(label.uncertain, "raw_name");
+		const unsureCatalog = uncertainItems(
+			label.uncertain,
+			"raw_name",
+			"normalized_name",
+		);
+		const catalog = catalogOutcomes(label.expected, result.final);
 		const attempts = [result.primary, result.fallback].filter(
 			(a) => a !== null,
 		);
@@ -153,13 +205,25 @@ export async function runEval(
 			id: label.id,
 			difficulty: label.difficulty,
 			fields,
+			uncertain_fields: uncertainFields,
 			fully_correct: isFullyCorrect(fields),
-			raw_name_cer: rawNameCer(label.expected, result.final),
-			catalog: catalogOutcomes(label.expected, result.final),
+			raw_name_cer: rawNameCer(
+				label.expected,
+				result.final,
+				(i) => !unsureName.has(i),
+			),
+			raw_name_cer_uncertain: rawNameCer(label.expected, result.final, (i) =>
+				unsureName.has(i),
+			),
+			catalog: catalog.filter((_, i) => !unsureCatalog.has(i)),
+			catalog_uncertain: catalog.filter((_, i) => unsureCatalog.has(i)),
 			used_fallback: result.used_fallback,
 			needs_review: result.final.needs_review,
 			primary_wrong: !isFullyCorrect(
-				compareReceipt(label.expected, result.primary.receipt),
+				splitUncertain(
+					compareReceipt(label.expected, result.primary.receipt),
+					label.uncertain,
+				).certain,
 			),
 			primary_flagged: !result.primary.validation.ok,
 			failed_checks: result.primary.validation.failures.map((f) => ({

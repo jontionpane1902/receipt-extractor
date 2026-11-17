@@ -11,8 +11,10 @@ import {
 	type OcrResult,
 } from "@receipt-extractor/core";
 import { CannedStructurer } from "./fakes.ts";
+import { LabelSchema } from "./label.ts";
 import { runPipeline } from "./pipeline.ts";
 import { formatRun } from "./report.ts";
+import { runEval } from "./runner.ts";
 import {
 	DATASET_DIR,
 	loadSyntheticSamples,
@@ -107,6 +109,74 @@ describe("synthetic eval run (fake OCR, fake structurer, no network)", () => {
 		const text = formatRun(await runSyntheticEval({ now: NOW }));
 		expect(text).toContain("not accuracy results");
 		expect(text).toContain("recall 66.7%");
+	});
+});
+
+describe("uncertain label fields in a run", () => {
+	async function runWith(uncertain: string[]) {
+		const { samples, catalog } = await loadSyntheticSamples();
+		const sample = samples.find((s) => s.label.id.includes("misread-name"));
+		if (!sample) throw new Error("sample missing");
+		const label = LabelSchema.parse({ ...sample.label, uncertain });
+		const ocr = new FakeOcrProvider({
+			[label.id]: linesFromText(sample.ocr_lines),
+		});
+		return runEval(
+			[
+				{
+					label,
+					image: fakeImage(label.id),
+					structurer: new CannedStructurer(sample.extraction),
+				},
+			],
+			{ ocr, now: NOW },
+			{ dataset: "test", catalogFor: () => new InMemoryCatalogStore(catalog) },
+		);
+	}
+
+	test("a wrong field counts normally when the label is sure of it", async () => {
+		const { summary } = await runWith([]);
+		expect(summary.all.fully_correct.correct).toBe(0);
+		expect(summary.all.raw_name_cer).toBeGreaterThan(0);
+		expect(summary.all.uncertain.fields).toBe(0);
+	});
+
+	test("the same field flagged uncertain is reported apart and excluded", async () => {
+		const run = await runWith(["items[1].raw_name"]);
+		const all = run.summary.all;
+		expect(all.fully_correct.correct).toBe(1);
+		expect(all.field_accuracy["items.raw_name"]).toMatchObject({
+			correct: 2,
+			total: 2,
+		});
+		expect(all.raw_name_cer).toBe(0);
+		expect(all.catalog_match_accuracy.total).toBe(2);
+		expect(all.checks).toMatchObject({ caught: 0, false_alarms: 1 });
+		expect(all.uncertain.fields).toBe(1);
+		expect(all.uncertain.field_accuracy["items.raw_name"]).toMatchObject({
+			correct: 0,
+			total: 1,
+		});
+		expect(all.uncertain.raw_name_cer).toBeGreaterThan(0);
+		expect(all.uncertain.catalog_match_accuracy.total).toBe(1);
+		expect(formatRun(run)).toContain("uncertain in the label");
+	});
+
+	test("the label schema rejects unknown paths and out-of-range items", async () => {
+		const { samples } = await loadSyntheticSamples();
+		const label = samples[0]?.label;
+		expect(
+			LabelSchema.safeParse({ ...label, uncertain: ["total"] }).success,
+		).toBe(true);
+		expect(
+			LabelSchema.safeParse({ ...label, uncertain: ["nope"] }).success,
+		).toBe(false);
+		expect(
+			LabelSchema.safeParse({ ...label, uncertain: ["items[99].qty"] }).success,
+		).toBe(false);
+		expect(
+			LabelSchema.parse({ ...label, uncertain: undefined }).uncertain,
+		).toEqual([]);
 	});
 });
 

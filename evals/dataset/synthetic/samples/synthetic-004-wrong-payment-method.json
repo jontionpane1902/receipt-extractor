@@ -1,6 +1,6 @@
 {
 	"label": {
-		"label_version": "0.1.0-provisional",
+		"label_version": "0.2.0-provisional",
 		"id": "synthetic-004-wrong-payment-method",
 		"difficulty": "easy",
 		"tags": ["synthetic"],

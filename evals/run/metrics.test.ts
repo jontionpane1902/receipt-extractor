@@ -10,6 +10,9 @@ import {
 	isFullyCorrect,
 	percentile,
 	rawNameCer,
+	rawNameCerByItem,
+	splitUncertain,
+	uncertainItems,
 } from "./metrics.ts";
 
 function expected(): ExpectedReceipt {
@@ -181,5 +184,70 @@ describe("checkEffectiveness", () => {
 		const result = checkEffectiveness([{ wrong: false, flagged: false }]);
 		expect(result.recall).toBeNull();
 		expect(result.precision).toBeNull();
+	});
+});
+
+describe("uncertain label fields", () => {
+	test("moves flagged scalar and per-item outcomes out of the main set", () => {
+		const outcomes = compareReceipt(
+			expected(),
+			actual({ branch: { code: "00000", name: "misread" }, total: 1 }),
+		);
+		const items = actual().items;
+		const second = items[1];
+		if (!second) throw new Error("no items");
+		second.raw_name = "ขนมปง";
+		const withName = compareReceipt(expected(), actual({ items }));
+
+		const split = splitUncertain(outcomes, ["branch.name"]);
+		expect(split.uncertain).toEqual({ "branch.name": [false] });
+		expect("branch.name" in split.certain).toBe(false);
+		expect(split.certain.total).toEqual([false]); // a certain field still counts
+
+		const names = splitUncertain(withName, ["items[1].raw_name"]);
+		expect(names.certain["items.raw_name"]).toEqual([true]);
+		expect(names.uncertain).toEqual({ "items.raw_name": [false] });
+		expect(isFullyCorrect(names.certain)).toBe(true);
+		expect(isFullyCorrect(withName)).toBe(false);
+	});
+
+	test("nothing flagged leaves the outcomes unchanged", () => {
+		const outcomes = compareReceipt(expected(), actual());
+		expect(splitUncertain(outcomes, [])).toEqual({
+			certain: outcomes,
+			uncertain: {},
+		});
+	});
+
+	test("'discounts' covers the discount total", () => {
+		const split = splitUncertain(compareReceipt(expected(), actual()), [
+			"discounts",
+		]);
+		expect(split.uncertain).toEqual({ "discounts.total": [true] });
+	});
+
+	test("CER can be computed for certain and uncertain names separately", () => {
+		const items = actual().items;
+		const second = items[1];
+		if (!second) throw new Error("no items");
+		second.raw_name = "ขนมปง"; // one cluster wrong in the 5-cluster name
+		const got = actual({ items });
+		const unsure = uncertainItems(
+			["items[1].raw_name", "items[0].qty"],
+			"raw_name",
+		);
+		expect([...unsure]).toEqual([1]);
+		expect(rawNameCerByItem(expected(), got)).toEqual([
+			{ edits: 0, length: 3 },
+			{ edits: 1, length: 5 },
+		]);
+		expect(rawNameCer(expected(), got, (i) => !unsure.has(i))).toEqual({
+			edits: 0,
+			length: 3,
+		});
+		expect(rawNameCer(expected(), got, (i) => unsure.has(i))).toEqual({
+			edits: 1,
+			length: 5,
+		});
 	});
 });

@@ -38,19 +38,20 @@ checks — not extraction quality. **Synthetic numbers test the harness; they ar
 not accuracy results** and their result files are git-ignored. Real runs
 arrive with the first real OCR provider and LLM structurer.
 
-## Label format (`label_version: 0.1.0-provisional`)
+## Label format (`label_version: 0.2.0-provisional`)
 
 Defined and validated by `run/label.ts` (`LabelSchema`). Provisional, like
 the receipt schema it mirrors.
 
 ```jsonc
 {
-  "label_version": "0.1.0-provisional",
+  "label_version": "0.2.0-provisional",
   "id": "711-0001",                  // lower-case, digits, dashes; equals the file name
   "difficulty": "easy",              // "easy" | "hard"
   "tags": ["faded", "long"],         // why it is easy or hard
   "image": "redacted/711-0001.jpg",  // relative to evals/dataset/; null for synthetic
   "notes": "optional free text",
+  "uncertain": ["branch.name", "items[0].raw_name"], // optional, see below
   "expected": {
     "store_chain": "7-eleven",
     "branch": { "code": "…", "name": "…" },
@@ -75,6 +76,23 @@ the receipt schema it mirrors.
   }
 }
 ```
+
+### Uncertain fields
+
+Some print cannot be read with confidence even by a person. List those
+field paths in `uncertain` and put your best reading in `expected`.
+Allowed paths: `store_chain`, `branch.code`, `branch.name`, `tax_id`,
+`receipt_number`, `datetime`, `total`, `vat`, `payment.method`,
+`payment.tendered`, `change`, `item_count`, `discounts`, and
+`items[N].raw_name | normalized_name | qty | unit_price | amount`
+(N counts from 0).
+
+Uncertain fields are **excluded from every main number** — field accuracy,
+fully-correct receipts, raw-name CER, catalog accuracy and the "wrong
+extraction" flag used for check effectiveness — and are reported in their
+own block. A label that may itself be wrong must not move the headline
+numbers in either direction. An uncertain `raw_name` also makes that
+item's catalog result uncertain.
 
 Labelling rules:
 
