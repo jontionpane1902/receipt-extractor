@@ -151,15 +151,26 @@ describe("evaluateOcrAgainstLabel (invented receipt)", () => {
 		expect(items[1]?.ocr_unit_price).toBe(12); // @price is not the amount
 		expect(items[1]?.ocr_amount).toBe(36);
 
-		expect(items.map((i) => [i.quantity.qty, i.quantity.source])).toEqual([
+		// Default: the count is a soft signal. Recovered quantities stay low
+		// trust and the missing one is not invented.
+		expect(
+			items.map((i) => [i.quantity.qty, i.quantity.source, i.quantity.trust]),
+		).toEqual([
+			[1, "dropped", "low"],
+			[3, "dropped", "low"],
+			[null, null, null],
+		]);
+		expect(items.map((i) => i.qty_ok)).toEqual([true, true, false]);
+		expect(quantity.status).toBe("unverified");
+		// Shown alongside: what assuming "count = pieces" would give.
+		expect(
+			items.map((i) => [i.quantity_if_pieces.qty, i.quantity_if_pieces.source]),
+		).toEqual([
 			[1, "dropped"],
 			[3, "dropped"],
 			[1, "deduced"],
 		]);
-		expect(
-			items.every((i) => i.qty_ok && i.quantity.trust === "confirmed"),
-		).toBe(true);
-		expect(quantity.status).toBe("deduced");
+		expect(items.every((i) => i.qty_ok_if_pieces)).toBe(true);
 
 		// 3 of 11 clusters wrong in the certain names (item 1 is exact);
 		// the uncertain name is counted apart.
@@ -197,6 +208,9 @@ describe("evaluateOcrAgainstLabel (invented receipt)", () => {
 		);
 		expect(catalog[1]?.before).toMatchObject({ correct: true, kind: "exact" });
 		expect(catalog[1]?.price_used).toBe(12);
+		expect(catalog[1]?.price_source).toBe("ocr");
+		// Quantity not recovered for item 2: its amount is used as the price, flagged.
+		expect(catalog[2]?.price_source).toBe("assumed_qty_1");
 		// Real character errors are not rescued by the look-alike table.
 		expect(catalog[2]?.before.similarity).toBe(
 			catalog[2]?.after.similarity ?? -1,
@@ -217,7 +231,61 @@ describe("evaluateOcrAgainstLabel (invented receipt)", () => {
 			amount_ok: false,
 		});
 		expect(items[1]?.cer.edits).toBe(items[1]?.cer.length ?? -1);
-		expect(["unresolved", "mismatch", "deduced"]).toContain(quantity.status);
+		expect(quantity.status).toBe("unverified");
+	});
+
+	test("discounts, a dropped item row and a dropped item count are reported", async () => {
+		const withDiscount = LabelSchema.parse({
+			...label,
+			expected: {
+				...label.expected,
+				discounts: [{ raw_label: "ส่วนลดสมาชิก", amount: 4.5 }],
+				total: 67,
+				change: 33,
+			},
+		});
+		const noisy: OcrResult = {
+			...ocr,
+			lines: [
+				...ocr.lines.filter((l) => l.row !== 3 && l.text !== "(5)"),
+				line("ส่วนลดสมาชิก", 8, 60),
+				line("4,50", 8, 400),
+				line("67.00", 9, 400),
+				line("33.00", 9, 300),
+			],
+			dropped: [
+				...(ocr.dropped ?? []),
+				{ ...line("ชาเขียวเยน", 3, 60, 0.75), reason: "low_confidence" },
+				{ ...line("5 ชิ้น", 5, 200, 0.7), reason: "low_confidence" },
+			],
+		};
+		const report = await evaluateOcrAgainstLabel(withDiscount, noisy, NOW);
+		const scalar = (path: string) =>
+			report.scalars.find((s) => s.path === path);
+
+		expect(scalar("discounts")).toMatchObject({ found: true });
+		expect(scalar("item_count")?.found).toBe(false);
+		expect(scalar("item_count")?.detail).toContain("dropped");
+		expect(report.items[1]).toMatchObject({ row: null, ocr_name: null });
+		expect(report.items[1]?.dropped_match?.similarity).toBeGreaterThan(0.8);
+		// The dropped count is still not allowed to invent quantities.
+		expect(report.quantity.status).toBe("unverified");
+		expect(formatOcrLevelReport(report)).toContain(
+			"row dropped by the OCR filter",
+		);
+	});
+
+	test("layout fit: arithmetic checks run on the label's own values", async () => {
+		const { label_checks } = await evaluateOcrAgainstLabel(label, ocr, NOW);
+		const of = (check: string) => label_checks.filter((c) => c.check === check);
+		expect(of("total_sum")[0]?.status).toBe("pass");
+		expect(of("change")[0]?.status).toBe("pass");
+		// default (soft), strict pieces, strict lines: 5 pieces on 3 lines, printed 5.
+		expect(of("item_count").map((c) => c.status)).toEqual([
+			"pass",
+			"pass",
+			"fail",
+		]);
 	});
 
 	test("the report states what was measured; --hide-text prints no receipt text", async () => {

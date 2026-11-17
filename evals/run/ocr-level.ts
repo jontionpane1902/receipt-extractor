@@ -1,5 +1,10 @@
 import {
 	type CheckResult,
+	checkChange,
+	checkItemCount,
+	checkLineAmounts,
+	checkTotal,
+	checkVat,
 	DEFAULT_LOOKALIKES,
 	editDistance,
 	graphemes,
@@ -66,9 +71,18 @@ export interface ItemReading {
 	expected_unit_price: number | null;
 	ocr_unit_price: number | null;
 	expected_qty: number;
+	/** Quantity with the item count as a soft signal (the default rule). */
 	quantity: ResolvedQuantity;
 	qty_ok: boolean;
+	/** Quantity if the printed count is assumed to mean total pieces. */
+	quantity_if_pieces: ResolvedQuantity;
+	qty_ok_if_pieces: boolean;
 	min_confidence: number | null;
+	/**
+	 * For an item with no kept OCR row: the most similar line among those
+	 * the OCR backend dropped, if any resembles the name.
+	 */
+	dropped_match: { similarity: number; confidence: number | null } | null;
 }
 
 export interface CatalogReading {
@@ -76,6 +90,8 @@ export interface CatalogReading {
 	uncertain_name: boolean;
 	ocr_name: string | null;
 	price_used: number | null;
+	/** "ocr": unit price or amount ÷ quantity read from OCR. "assumed_qty_1": amount read, quantity unknown. */
+	price_source: "ocr" | "assumed_qty_1" | "none";
 	before: { kind: string; similarity: number; correct: boolean };
 	after: { kind: string; similarity: number; correct: boolean };
 }
@@ -93,6 +109,9 @@ export interface OcrLevelReport {
 	scalars: ScalarReading[];
 	items: ItemReading[];
 	quantity: { status: string; message: string };
+	quantity_if_pieces: { status: string; message: string };
+	/** Arithmetic checks run on the LABEL itself: does this layout fit the checks at all? */
+	label_checks: CheckResult[];
 	cer: { certain: number | null; uncertain: number | null };
 	/** Checks run on a receipt assembled from the OCR readings above. */
 	checks: CheckResult[];
@@ -220,11 +239,28 @@ export async function evaluateOcrAgainstLabel(
 				: null;
 		},
 	);
-	const ocrItemCount =
-		expected.item_count !== null && anyNumber.has(toSatang(expected.item_count))
-			? expected.item_count
-			: null;
+	const droppedNumbers = numbersIn(
+		(ocr.dropped ?? []).map((line) => line.text).join("\n"),
+	);
+	const countSource =
+		expected.item_count === null
+			? null
+			: anyNumber.has(toSatang(expected.item_count))
+				? "kept"
+				: droppedNumbers.has(toSatang(expected.item_count))
+					? "dropped"
+					: null;
+	const ocrItemCount = countSource === null ? null : expected.item_count;
 	const resolution = resolveQuantities(quantityInputs, ocrItemCount);
+	const ifPieces = resolveQuantities(quantityInputs, ocrItemCount, {
+		countRule: "pieces",
+	});
+	const unknownQuantity: ResolvedQuantity = {
+		qty: null,
+		source: null,
+		trust: null,
+		confidence: null,
+	};
 
 	const items: ItemReading[] = expected.items.map((want, index) => {
 		const rowIndex = assignment[index] ?? null;
@@ -243,12 +279,19 @@ export async function evaluateOcrAgainstLabel(
 		const ambiguous = tokens.filter((t) => t.ambiguous !== null);
 		const ocrAmount = amountToken?.value ?? null;
 		const reference = graphemes(want.raw_name.normalize("NFC"));
-		const quantity = resolution.quantities[index] ?? {
-			qty: null,
-			source: null,
-			trust: null,
-			confidence: null,
-		};
+		const quantity = resolution.quantities[index] ?? unknownQuantity;
+		const quantityIfPieces = ifPieces.quantities[index] ?? unknownQuantity;
+		const droppedBest = part
+			? null
+			: (ocr.dropped ?? [])
+					.map((line) => ({
+						similarity: similarity(want.raw_name, line.text, {
+							lookalikes: DEFAULT_LOOKALIKES,
+						}),
+						confidence: line.confidence,
+					}))
+					.filter((candidate) => candidate.similarity >= MIN_ALIGN_SIMILARITY)
+					.sort((a, b) => b.similarity - a.similarity)[0];
 		return {
 			index,
 			uncertain_name: unsureNames.has(index),
@@ -281,7 +324,10 @@ export async function evaluateOcrAgainstLabel(
 			expected_qty: want.qty,
 			quantity,
 			qty_ok: quantity.qty === want.qty,
+			quantity_if_pieces: quantityIfPieces,
+			qty_ok_if_pieces: quantityIfPieces.qty === want.qty,
 			min_confidence: part ? minConfidence(part.row.lines) : null,
+			dropped_match: droppedBest ?? null,
 		};
 	});
 
@@ -382,8 +428,24 @@ export async function evaluateOcrAgainstLabel(
 	else {
 		scalar(
 			"item_count",
-			ocrItemCount !== null,
-			ocrItemCount !== null ? "count found in OCR output" : "count not found",
+			countSource === "kept",
+			countSource === "kept"
+				? "count found in OCR output"
+				: countSource === "dropped"
+					? "only in a line the OCR backend dropped (low trust)"
+					: "count not found",
+		);
+	}
+	const discountsFound = expected.discounts.map((discount) =>
+		amounts.has(toSatang(discount.amount)),
+	);
+	if (expected.discounts.length === 0)
+		scalar("discounts", null, "label has none");
+	else {
+		scalar(
+			"discounts",
+			discountsFound.every(Boolean),
+			`${discountsFound.filter(Boolean).length}/${discountsFound.length} discount amounts found in OCR output`,
 		);
 	}
 
@@ -408,7 +470,7 @@ export async function evaluateOcrAgainstLabel(
 			unit_price: item.ocr_unit_price,
 			amount: item.ocr_amount === null ? 0 : Math.abs(item.ocr_amount),
 		})),
-		discounts: [],
+		discounts: expected.discounts.filter((_, i) => discountsFound[i]),
 		total: found("total") ? expected.total : 0,
 		vat: found("vat") ? expected.vat : null,
 		payment: {
@@ -434,11 +496,19 @@ export async function evaluateOcrAgainstLabel(
 	);
 	const catalog: CatalogReading[] = [];
 	for (const item of items) {
+		// Same rule as the pipeline's normalizeItems, except that an unknown
+		// quantity is taken as 1 (and flagged) so that a lost quantity column
+		// does not hide what the names alone would do.
+		const amount = item.ocr_amount === null ? null : Math.abs(item.ocr_amount);
 		const price =
 			item.ocr_unit_price ??
-			(item.ocr_amount !== null && item.quantity.qty
-				? Math.abs(item.ocr_amount) / item.quantity.qty
-				: null);
+			(amount === null ? null : amount / (item.quantity.qty ?? 1));
+		const priceSource =
+			price === null
+				? "none"
+				: item.ocr_unit_price !== null || item.quantity.qty !== null
+					? "ocr"
+					: "assumed_qty_1";
 		const run = async (lookalikes: typeof DEFAULT_LOOKALIKES) => {
 			if (item.ocr_name === null)
 				return { kind: "none", similarity: 0, correct: false };
@@ -466,6 +536,7 @@ export async function evaluateOcrAgainstLabel(
 			uncertain_name: item.uncertain_name,
 			ocr_name: item.ocr_name,
 			price_used: price,
+			price_source: priceSource,
 			before: await run(NO_LOOKALIKES),
 			after: await run(DEFAULT_LOOKALIKES),
 		});
@@ -492,6 +563,8 @@ export async function evaluateOcrAgainstLabel(
 		scalars,
 		items,
 		quantity: { status: resolution.status, message: resolution.message },
+		quantity_if_pieces: { status: ifPieces.status, message: ifPieces.message },
+		label_checks: labelChecks(label),
 		cer: {
 			certain: cer((item) => !item.uncertain_name),
 			uncertain: cer((item) => item.uncertain_name),
@@ -500,6 +573,29 @@ export async function evaluateOcrAgainstLabel(
 		validation_ok: validation.ok,
 		catalog,
 	};
+}
+
+/**
+ * Arithmetic checks on the label's own values. If these fail, the receipt
+ * layout does not fit the check — no extraction could pass it.
+ */
+function labelChecks(label: Label): CheckResult[] {
+	const receipt: Receipt = {
+		...label.expected,
+		schema_version: SCHEMA_VERSION,
+		datetime_raw: null,
+		field_confidence: {},
+		needs_review: false,
+	};
+	return [
+		...checkLineAmounts(receipt),
+		checkTotal(receipt),
+		checkVat(receipt),
+		checkChange(receipt),
+		checkItemCount(receipt),
+		checkItemCount(receipt, "pieces"),
+		checkItemCount(receipt, "lines"),
+	];
 }
 
 const pct = (value: number | null) =>
@@ -544,12 +640,21 @@ export function formatOcrLevelReport(
 				`${String(item.index).padStart(3)}  ${String(item.row ?? "-").padStart(3)}  ${`${item.cer.edits}/${item.cer.length}`.padStart(5)} ${pct(item.cer.length ? item.cer.edits / item.cer.length : null).padStart(6)}  ${mark(item.name_exact)}  ${mark(item.amount_ok)}  ${mark(item.qty_ok)} ${String(q.qty ?? "?")} (${q.source ?? "unknown"}, ${q.trust ?? "-"})`.padEnd(
 					78,
 				) +
-				`${item.min_confidence?.toFixed(3) ?? "n/a"}${item.uncertain_name ? "  [uncertain name]" : ""}${item.suffix ? `  suffix ${item.suffix}` : ""}${item.amount_notes.length ? `  {${item.amount_notes.join("; ")}}` : ""}${show ? `\n       printed: ${item.expected_name}\n       ocr:     ${name(item.ocr_name)}` : ""}`
+				`${item.min_confidence?.toFixed(3) ?? "n/a"}${item.uncertain_name ? "  [uncertain name]" : ""}${item.suffix ? `  suffix ${item.suffix}` : ""}${item.amount_notes.length ? `  {${item.amount_notes.join("; ")}}` : ""}${item.dropped_match ? `  {row dropped by the OCR filter: best dropped line sim ${item.dropped_match.similarity.toFixed(2)}, conf ${item.dropped_match.confidence?.toFixed(2) ?? "n/a"}}` : ""}${show ? `\n       printed: ${item.expected_name}\n       ocr:     ${name(item.ocr_name)}` : ""}`
 			);
 		}),
 		`  names exact ${itemFields.filter((i) => i.name_exact).length}/${itemFields.length}, amounts ${report.items.filter((i) => i.amount_ok).length}/${report.items.length}, quantities ${report.items.filter((i) => i.qty_ok).length}/${report.items.length}`,
 		`  raw-name CER: ${pct(report.cer.certain)} (certain names), ${pct(report.cer.uncertain)} (uncertain names, reported apart)`,
-		`  quantity recovery: ${report.quantity.status} — ${report.quantity.message}`,
+		`  quantity recovery (count as soft signal): ${report.quantity.status} — ${report.quantity.message}`,
+		`  if the count were assumed to mean pieces:  ${report.quantity_if_pieces.status} — ${report.quantity_if_pieces.message} → quantities ${report.items.filter((i) => i.qty_ok_if_pieces).length}/${report.items.length}`,
+		"",
+		"## Layout fit: arithmetic checks run on the LABEL's own values",
+		...report.label_checks
+			.filter((c) => c.check !== "line_amount" || c.status !== "skip")
+			.map(
+				(c, i, all) =>
+					`  ${c.status.padEnd(4)} ${c.check}${c.check === "item_count" ? ["  (default, soft)", "  (strict pieces)", "  (strict lines) "][i - (all.length - 3)] : ""}: ${c.message}`,
+			),
 		"",
 		"## Validation checks, run on a receipt assembled from the OCR readings above",
 		`  overall: ${report.validation_ok ? "ok" : "NOT ok"}`,
@@ -562,7 +667,7 @@ export function formatOcrLevelReport(
 		"  #   plain edit distance        with look-alike table",
 		...report.catalog.map(
 			(c) =>
-				`${String(c.index).padStart(3)}   ${c.before.correct ? "match" : "no   "} (${c.before.kind.padEnd(5)}, sim ${c.before.similarity.toFixed(3)})   ${c.after.correct ? "match" : "no   "} (${c.after.kind.padEnd(5)}, sim ${c.after.similarity.toFixed(3)})${c.price_used === null ? "  no price read" : ""}${c.uncertain_name ? "  [uncertain name]" : ""}`,
+				`${String(c.index).padStart(3)}   ${c.before.correct ? "match" : "no   "} (${c.before.kind.padEnd(5)}, sim ${c.before.similarity.toFixed(3)})   ${c.after.correct ? "match" : "no   "} (${c.after.kind.padEnd(5)}, sim ${c.after.similarity.toFixed(3)})${c.price_source === "none" ? "  no price read" : c.price_source === "assumed_qty_1" ? "  price = amount, qty unknown" : ""}${c.uncertain_name ? "  [uncertain name]" : ""}`,
 		),
 		`  matched: ${report.catalog.filter((c) => c.before.correct).length}/${report.catalog.length} before, ${report.catalog.filter((c) => c.after.correct).length}/${report.catalog.length} after`,
 		"",
