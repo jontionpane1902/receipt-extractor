@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { linesFromText } from "../ocr/fake.ts";
 import { SAMPLE_OCR_TEXT, sampleReceipt } from "../schema/fixtures.ts";
-import { checkGrounding, numbersIn, squash } from "./grounding.ts";
+import { checkGrounding, squash } from "./grounding.ts";
 
 const ocr = { lines: linesFromText(SAMPLE_OCR_TEXT) };
 const failures = (results: ReturnType<typeof checkGrounding>) =>
@@ -65,13 +65,90 @@ describe("checkGrounding", () => {
 	});
 });
 
-describe("helpers", () => {
-	test("numbersIn returns satang values", () => {
-		expect(
-			[...numbersIn("2 @7.00 14.00 -5.00 1,000")].sort((a, b) => a - b),
-		).toEqual([200, 500, 700, 1400, 100000]);
+describe("grounding with receipt-style numbers", () => {
+	const bare = (over: object) =>
+		sampleReceipt({
+			branch: { code: null, name: null },
+			tax_id: null,
+			receipt_number: null,
+			datetime_raw: null,
+			items: [],
+			discounts: [],
+			total: 0,
+			vat: null,
+			payment: { method: "unknown", tendered: null },
+			change: null,
+			item_count: null,
+			...over,
+		});
+
+	test("grounds a decimal comma, a spaced decimal and a suffixed amount", () => {
+		const text = {
+			lines: linesFromText(["รวม 219,75", "เงินทอน 80. 25", "นม 18,50N"]),
+		};
+		const receipt = bare({
+			total: 219.75,
+			change: 80.25,
+			items: [
+				{
+					raw_name: "นม",
+					normalized_name: null,
+					qty: 1,
+					unit_price: null,
+					amount: 18.5,
+				},
+			],
+		});
+		expect(failures(checkGrounding(receipt, text))).toEqual([]);
 	});
 
+	test("a decimal comma is not read as a number a hundred times larger", () => {
+		const text = { lines: linesFromText(["รวม 5,00"]) };
+		expect(failures(checkGrounding(bare({ total: 500 }), text))).toMatchObject([
+			{ path: "total" },
+		]);
+		expect(failures(checkGrounding(bare({ total: 5 }), text))).toEqual([]);
+	});
+
+	test("an @unit price does not ground a line amount", () => {
+		const text = { lines: linesFromText(["ขนม 3 @12.00 36.00"]) };
+		const item = {
+			raw_name: "ขนม",
+			normalized_name: null,
+			qty: 3,
+			unit_price: 12,
+		};
+		expect(
+			failures(
+				checkGrounding(
+					bare({ total: 36, items: [{ ...item, amount: 36 }] }),
+					text,
+				),
+			),
+		).toEqual([]);
+		// The structurer put the unit price where the amount belongs.
+		expect(
+			failures(
+				checkGrounding(
+					bare({ total: 36, items: [{ ...item, amount: 12 }] }),
+					text,
+				),
+			).map((f) => f.path),
+		).toEqual(["items[0].amount"]);
+	});
+
+	test("an ambiguous number grounds nothing", () => {
+		const text = { lines: linesFromText(["รวม 12,5"]) };
+		expect(failures(checkGrounding(bare({ total: 12.5 }), text))).toHaveLength(
+			1,
+		);
+		expect(failures(checkGrounding(bare({ total: 125 }), text))).toHaveLength(
+			1,
+		);
+	});
+});
+
+describe("helpers", () => {
 	test("squash normalises composed forms, whitespace and case", () => {
 		expect(squash(" DEMO  Tea\n")).toBe("demotea");
 		expect(squash("é")).toBe("é");

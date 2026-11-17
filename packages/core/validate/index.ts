@@ -19,6 +19,7 @@ export * from "./confidence.ts";
 export * from "./date.ts";
 export * from "./format.ts";
 export * from "./grounding.ts";
+export * from "./numbers.ts";
 export * from "./types.ts";
 
 export interface ValidateOptions {
