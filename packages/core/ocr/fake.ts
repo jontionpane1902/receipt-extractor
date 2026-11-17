@@ -19,7 +19,7 @@ export function fakeImage(id: string): OcrImage {
 
 export interface FakeLineInput {
 	text: string;
-	confidence?: number | null;
+	confidence?: number | null | undefined;
 }
 
 /**

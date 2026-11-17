@@ -80,7 +80,7 @@ describe("checkDate", () => {
 			["date_parse", "pass"],
 			["date_not_future", "pass"],
 		]);
-		expect(results[0]?.actual).toBe("2026-11-17T14:05:00+07:00");
+		expect(results[0]?.actual).toBe("2026-08-15T14:05:00+07:00");
 	});
 
 	test("fails for a date in the future", () => {

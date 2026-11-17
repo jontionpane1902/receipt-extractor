@@ -23,8 +23,8 @@ export function sampleReceipt(overrides: Partial<Receipt> = {}): Receipt {
 		branch: { code: "00000", name: "สาขาทดสอบ" },
 		tax_id: "9012345678902",
 		receipt_number: "R#0000012345",
-		datetime_raw: "17/11/69 14:05",
-		datetime: "2026-11-17T14:05:00+07:00",
+		datetime_raw: "15/08/69 14:05",
+		datetime: "2026-08-15T14:05:00+07:00",
 		items: [
 			{
 				raw_name: "น้ำดื่มตราทดสอบ 600มล",
@@ -64,7 +64,7 @@ export function sampleReceipt(overrides: Partial<Receipt> = {}): Receipt {
 export const SAMPLE_OCR_TEXT: readonly string[] = [
 	"DemoMart สาขาทดสอบ (00000)",
 	"TAX ID 9012345678902",
-	"R#0000012345 17/11/69 14:05",
+	"R#0000012345 15/08/69 14:05",
 	"น้ำดื่มตราทดสอบ 600มล 2 @7.00 14.00",
 	"ขนมข้าวพองสมมติ 48ก 20.00",
 	"ชาเย็นหอม DEMO TEA 35.00",
