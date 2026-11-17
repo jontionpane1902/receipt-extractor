@@ -7,7 +7,11 @@ import {
 	thaiIdCheckDigit,
 } from "@receipt-extractor/core";
 import { LABEL_VERSION, LabelSchema } from "./label.ts";
-import { evaluateOcrAgainstLabel, formatOcrLevelReport } from "./ocr-level.ts";
+import {
+	evaluateOcrAgainstLabel,
+	formatOcrLevelReport,
+	standaloneIntegers,
+} from "./ocr-level.ts";
 
 // Everything here is invented: names, numbers and layout.
 const NOW = new Date("2026-11-18T09:00:00+07:00");
@@ -273,6 +277,30 @@ describe("evaluateOcrAgainstLabel (invented receipt)", () => {
 		expect(formatOcrLevelReport(report)).toContain(
 			"row dropped by the OCR filter",
 		);
+	});
+
+	test("an item count is only read from a number that stands on its own", async () => {
+		expect([...standaloneIntegers("Total (5) 71,50")]).toEqual([5]);
+		expect([...standaloneIntegers("ยอดสุทธิ 5 ชิ้น 71.50")]).toEqual([5]);
+		// glued to a letter, part of a name, inside a phone number, a time or a date
+		expect(
+			standaloneIntegers("ผ5 ขนม21 0-2000-1234 09:30 14/08/69 R0000012345")
+				.size,
+		).toBe(0);
+
+		// The real "(5)" is lost and a stray 5 is glued to a misread letter.
+		const junk: OcrResult = {
+			...ocr,
+			lines: [
+				...ocr.lines.filter((l) => l.text !== "(5)"),
+				line("** ผ5", 9, 10),
+			],
+		};
+		const report = await evaluateOcrAgainstLabel(label, junk, NOW);
+		expect(report.scalars.find((s) => s.path === "item_count")?.found).toBe(
+			false,
+		);
+		expect(report.quantity_if_pieces.status).toBe("unverified");
 	});
 
 	test("layout fit: arithmetic checks run on the label's own values", async () => {

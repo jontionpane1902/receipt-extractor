@@ -194,6 +194,32 @@ export function alignItems(
 	return assigned;
 }
 
+/**
+ * Whole numbers that stand on their own: not glued to a letter or another
+ * digit ("(4)" and "5 ชิ้น" count; the 4 in a misread "ผ4" or the 21 in a
+ * product name does not). An item count is only looked for among these, so
+ * OCR junk next to a letter cannot pass for it.
+ */
+export function standaloneIntegers(text: string): Set<number> {
+	const ascii = thaiDigitsToAscii(text);
+	const found = new Set<number>();
+	for (const token of parseNumberTokens(ascii)) {
+		if (token.value === null || token.decimals !== 0 || token.value < 0)
+			continue;
+		const before = ascii[token.start - 1] ?? " ";
+		const after = ascii[token.end] ?? " ";
+		if (
+			/[\p{L}\p{M}\p{N}]/u.test(before) ||
+			/[\p{L}\p{M}\p{N}.,:/-]/u.test(after)
+		) {
+			continue;
+		}
+		if (/[.,:/-]/.test(before)) continue;
+		found.add(token.value);
+	}
+	return found;
+}
+
 const minConfidence = (lines: readonly OcrLine[]) => {
 	const scores = lines
 		.map((l) => l.confidence)
@@ -214,7 +240,6 @@ export async function evaluateOcrAgainstLabel(
 	const pageText = ocr.lines.map((line) => line.text).join("\n");
 	const squashedPage = squash(ocr.lines.map((line) => line.text).join(" "));
 	const amounts = numbersIn(pageText, { excludeUnitPrices: true });
-	const anyNumber = numbersIn(pageText);
 
 	// ---- items -----------------------------------------------------------
 	const assignment = alignItems(
@@ -239,15 +264,16 @@ export async function evaluateOcrAgainstLabel(
 				: null;
 		},
 	);
-	const droppedNumbers = numbersIn(
+	const keptCounts = standaloneIntegers(pageText);
+	const droppedCounts = standaloneIntegers(
 		(ocr.dropped ?? []).map((line) => line.text).join("\n"),
 	);
 	const countSource =
 		expected.item_count === null
 			? null
-			: anyNumber.has(toSatang(expected.item_count))
+			: keptCounts.has(expected.item_count)
 				? "kept"
-				: droppedNumbers.has(toSatang(expected.item_count))
+				: droppedCounts.has(expected.item_count)
 					? "dropped"
 					: null;
 	const ocrItemCount = countSource === null ? null : expected.item_count;
