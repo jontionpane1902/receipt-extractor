@@ -134,6 +134,11 @@ Run `bun run check` before every commit.
   them, text extracted from them, or `bun run ocr` output; never paste
   that text into tests, fixtures, docs or commit messages; never send
   them to an external API.
+- AI assistants must not open, view or read any image under a `private/`
+  folder themselves (viewing sends the image to the model provider). Work
+  only from `bun run ocr <image>` output, which runs the local model, and
+  from label text the owner provides. Labels for private images also stay
+  in the private folder, uncommitted.
 - Test images must be generated (see
   `packages/ocr-openthai/tools/make-synthetic-receipt.ts`), never real
   receipts.
