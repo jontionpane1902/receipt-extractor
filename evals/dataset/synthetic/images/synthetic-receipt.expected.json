@@ -1,0 +1,20 @@
+{
+	"note": "Invented content rendered by packages/ocr-openthai/tools/make-synthetic-receipt.ts. Not a real receipt: the store name, tax ID (fictional, valid check digit only) and product names are made up; any resemblance to real ones is unintended.",
+	"font": "Sarabun Regular (SIL Open Font License)",
+	"width": 920,
+	"height": 1280,
+	"rows": [
+		"DemoMart สาขาทดสอบ (00000)",
+		"TAX ID 9012345678902",
+		"R#0000012345 15/08/69 14:05",
+		"น้ำดื่มตราทดสอบ 600มล 2 @7.00 14.00",
+		"ขนมข้าวพองสมมติ 48ก 20.00",
+		"ชาเย็นหอม DEMO TEA 35.00",
+		"ส่วนลด -5.00",
+		"ยอดสุทธิ 4 ชิ้น 64.00",
+		"VAT 7% 4.19",
+		"เงินสด 100.00",
+		"เงินทอน 36.00",
+		"SYNTHETIC TEST IMAGE - NOT A REAL RECEIPT"
+	]
+}
