@@ -25,6 +25,14 @@
         "zod": "^4.6.7",
       },
     },
+    "packages/ocr-openthai": {
+      "name": "@receipt-extractor/ocr-openthai",
+      "version": "0.0.0",
+      "dependencies": {
+        "@receipt-extractor/core": "workspace:*",
+        "zod": "^4.6.7",
+      },
+    },
   },
   "packages": {
     "@biomejs/biome": ["@biomejs/biome@2.6.8", "", { "optionalDependencies": { "@biomejs/cli-android-arm64": "2.6.8", "@biomejs/cli-android-x64": "2.6.8", "@biomejs/cli-darwin-arm64": "2.6.8", "@biomejs/cli-darwin-x64": "2.6.8", "@biomejs/cli-linux-arm64": "2.6.8", "@biomejs/cli-linux-arm64-musl": "2.6.8", "@biomejs/cli-linux-x64": "2.6.8", "@biomejs/cli-linux-x64-musl": "2.6.8", "@biomejs/cli-win32-arm64": "2.6.8", "@biomejs/cli-win32-x64": "2.6.8" }, "bin": { "biome": "bin/biome" } }, "sha512-kqZUFvX6/aYQOmzfRN5ANcfNS9wLH4aHLWWP/dQKyhRZVoA6rdWszA7DGugFcxPbMiznUyVYyukVl+ExZN4PQA=="],
@@ -52,6 +60,8 @@
     "@receipt-extractor/core": ["@receipt-extractor/core@workspace:packages/core"],
 
     "@receipt-extractor/evals": ["@receipt-extractor/evals@workspace:evals"],
+
+    "@receipt-extractor/ocr-openthai": ["@receipt-extractor/ocr-openthai@workspace:packages/ocr-openthai"],
 
     "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
 

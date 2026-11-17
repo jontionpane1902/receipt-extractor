@@ -17,5 +17,5 @@
 		"types": ["bun"]
 	},
 	"include": ["packages", "evals"],
-	"exclude": ["node_modules"]
+	"exclude": ["node_modules", "**/.venv", "models"]
 }

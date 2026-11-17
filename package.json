@@ -12,7 +12,9 @@
 		"format": "biome check --write .",
 		"typecheck": "tsc --noEmit",
 		"eval": "bun run evals/run/cli.ts",
-		"check": "bun run lint && bun run typecheck && bun test"
+		"check": "bun run lint && bun run typecheck && bun test",
+		"ocr:setup": "bun run packages/ocr-openthai/scripts/setup.ts",
+		"test:ocr": "OPENTHAI_INTEGRATION=1 bun test packages/ocr-openthai/integration.test.ts"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.6.8",
