@@ -18,6 +18,10 @@ const { values } = parseArgs({
 		/** OCR-level eval of one label file against its image. Prints only; never writes results. */
 		label: { type: "string" },
 		"hide-text": { type: "boolean", default: false },
+		/** With --label: score this file instead of the label's image (e.g. a rescan). PDFs are rendered locally. */
+		image: { type: "string" },
+		"pdf-scale": { type: "string" },
+		"pdf-page": { type: "string" },
 	},
 });
 
@@ -74,17 +78,29 @@ if (values.label !== undefined) {
 		process.exit(2);
 	}
 	const label = LabelSchema.parse(await Bun.file(values.label).json());
-	if (label.image === null) {
+	if (label.image === null && values.image === undefined) {
 		console.error("label has no image");
 		process.exit(2);
+	}
+	const { isPdf, renderPdfPage } = await import(
+		"@receipt-extractor/ocr-openthai"
+	);
+	let imagePath = values.image ?? join(DATASET_DIR, label.image ?? "");
+	if (await isPdf(imagePath)) {
+		const pdf = await renderPdfPage(imagePath, {
+			...(values["pdf-scale"] ? { scale: Number(values["pdf-scale"]) } : {}),
+			...(values["pdf-page"] ? { page: Number(values["pdf-page"]) } : {}),
+		});
+		console.log(
+			`pdf: page ${pdf.page} of ${pdf.page_count}, embedded image ${pdf.images.map((i) => `${i.width}x${i.height}`).join(", ") || "none"}, rendered ${pdf.render.width}x${pdf.render.height} px (${pdf.render.mode})`,
+		);
+		imagePath = pdf.render.png;
 	}
 	const provider = await openOcr();
 	try {
 		if (!provider.provider) throw new Error("no OCR provider");
 		const result = await provider.provider.recognize({
-			bytes: new Uint8Array(
-				await Bun.file(join(DATASET_DIR, label.image)).arrayBuffer(),
-			),
+			bytes: new Uint8Array(await Bun.file(imagePath).arrayBuffer()),
 			mime_type: "application/octet-stream",
 		});
 		const report = await evaluateOcrAgainstLabel(label, result, new Date());

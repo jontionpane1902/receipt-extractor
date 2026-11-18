@@ -55,6 +55,10 @@ structuring step**:
 - catalog: with the true names seeded as confirmed entries, whether each
   OCR name reaches its true name, with and without the look-alike table.
 
+Add `--image <file>` to score another capture of the same receipt against
+the same label, for example a rescan or a PDF (`--pdf-page`, `--pdf-scale`
+apply to PDFs, which are rendered locally first).
+
 The label guides where to look, so this is an upper bound for a text-only
 structurer on that OCR output, not an extraction result. It prints to the
 terminal and never writes a result file. `--hide-text` leaves out names
