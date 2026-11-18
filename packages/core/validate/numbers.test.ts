@@ -125,6 +125,71 @@ describe("amount suffix flags", () => {
 	});
 });
 
+describe("configurable suffix set", () => {
+	test("V is recognised by default, alongside N and NP", () => {
+		expect(one("42.00V")).toMatchObject({
+			value: 42,
+			suffix: "V",
+			notes: [],
+		});
+		expect(one("12,50V")).toMatchObject({ value: 12.5, suffix: "V" });
+		expect(one("-9.00V")).toMatchObject({ value: -9, suffix: "V" });
+	});
+
+	test("the set can be replaced per call", () => {
+		const only = { suffixes: ["T", "X"] };
+		expect(parseNumberTokens("8.00T", only)[0]).toMatchObject({
+			value: 8,
+			suffix: "T",
+		});
+		expect(parseNumberTokens("8.00V", only)[0]).toMatchObject({
+			value: 8,
+			suffix: null,
+			notes: ["unknown_suffix"],
+		});
+		expect(parseNumberTokens("8.00N", { suffixes: [] })[0]?.suffix).toBeNull();
+	});
+});
+
+describe("suffix letter misread as a trailing zero", () => {
+	test("two decimals plus one extra 0 is the two-decimal amount, flagged, letter not guessed", () => {
+		expect(one("18.500")).toMatchObject({
+			value: 18.5,
+			decimals: 2,
+			suffix: null,
+			notes: ["suffix_misread_as_digit"],
+			ambiguous: null,
+			raw: "18.500",
+		});
+		expect(one("7.000").value).toBe(7);
+		expect(one("1,250.000")).toMatchObject({
+			value: 1250,
+			notes: ["thousands_separator", "suffix_misread_as_digit"],
+		});
+		expect(one("-18.500").value).toBe(-18.5);
+	});
+
+	test("anything else with three or more decimals stays ambiguous", () => {
+		for (const text of ["18.505", "18.5000", "18.501", "18.0005"]) {
+			expect(one(text).value).toBeNull();
+			expect(one(text).ambiguous).toContain("three or more digits");
+		}
+	});
+
+	test("the repair can be switched off", () => {
+		const strict = parseNumberTokens("18.500", {
+			repairTrailingZero: false,
+		})[0];
+		expect(strict?.value).toBeNull();
+		expect(strict?.ambiguous).toContain("three or more digits");
+		expect(numbersIn("18.500", { repairTrailingZero: false }).size).toBe(0);
+	});
+
+	test("a repaired amount grounds its two-decimal value, never a thousand times more", () => {
+		expect([...numbersIn("18.500")]).toEqual([1850]);
+	});
+});
+
 describe("unit price", () => {
 	test("@price is a unit price, the bare number after it a line amount", () => {
 		const tokens = parseNumberTokens("3 @12.00 36.00");
@@ -153,7 +218,8 @@ describe("ambiguous cases are flagged, not guessed", () => {
 		["12,5", "comma is neither"],
 		["1,2500", "comma is neither"],
 		["12,34,567", "comma is neither"],
-		["1.250", "three or more digits"],
+		["1.255", "three or more digits"],
+		["1.2500", "three or more digits"],
 		["1.250,00", "comma after the decimal point"],
 		["17.11.69", "more than one decimal point"],
 		["1,25.00", "not a valid thousands separator"],

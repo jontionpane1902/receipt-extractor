@@ -13,18 +13,42 @@ import { thaiDigitsToAscii } from "./date.ts";
  *   118. 25     stray space after the point      → 118.25
  *   1,250.00    genuine thousands separator      → 1250.00
  *   18.50N      amount with a suffix flag        → 18.50, suffix "N"
+ *   18.500      suffix letter misread as a zero  → 18.50, suffix unknown, flagged
  *   @7.00       unit price, not a line amount    → 7.00, kind "unit_price"
- *   12,5  1.250  1.2.3                           → ambiguous, value null
+ *   12,5  1.255  1.2.3                           → ambiguous, value null
  */
 export type NumberNote =
 	| "decimal_comma"
 	| "space_after_point"
 	| "thousands_separator"
-	| "unknown_suffix";
+	| "unknown_suffix"
+	/**
+	 * Two decimals followed by one extra "0": receipts print amounts with
+	 * exactly two decimals, and OCR reads a trailing suffix letter as a
+	 * zero. The value is the two-decimal amount; which letter it was is
+	 * NOT guessed (`suffix` stays null).
+	 */
+	| "suffix_misread_as_digit";
 
-/** Suffix flags printed straight after an amount. Meaning is layout-specific. */
-export const KNOWN_SUFFIXES = ["N", "NP"] as const;
-export type AmountSuffix = (typeof KNOWN_SUFFIXES)[number];
+/**
+ * Suffix flags printed straight after an amount (one or two capital
+ * letters). Seen so far: N, NP and V. Their meaning is layout-specific and
+ * is not interpreted here.
+ */
+export const DEFAULT_SUFFIXES: readonly string[] = ["N", "NP", "V"];
+/** @deprecated use DEFAULT_SUFFIXES */
+export const KNOWN_SUFFIXES = DEFAULT_SUFFIXES;
+export type AmountSuffix = string;
+
+export interface ParseNumberOptions {
+	/** Suffix flags to recognise. Default: DEFAULT_SUFFIXES. */
+	suffixes?: readonly string[];
+	/**
+	 * Read "18.500" as 18.50 with a misread suffix (default true). Turn off
+	 * for text where three decimals are meaningful.
+	 */
+	repairTrailingZero?: boolean;
+}
 
 export interface NumberToken {
 	/** Exactly what was in the text, including "@", sign and suffix. */
@@ -69,7 +93,11 @@ interface Reading {
 	notes: NumberNote[];
 }
 
-function read(blob: string, spaced: string | undefined): Reading | string {
+function read(
+	blob: string,
+	spaced: string | undefined,
+	repairTrailingZero: boolean,
+): Reading | string {
 	const dots = blob.split(".").length - 1;
 	const notes: NumberNote[] = [];
 
@@ -93,12 +121,15 @@ function read(blob: string, spaced: string | undefined): Reading | string {
 	if (dots === 1) {
 		const [head = "", tail = ""] = blob.split(".");
 		if (!isDigits(tail)) return "comma after the decimal point";
-		if (tail.length > 2) {
+		const misreadSuffix =
+			repairTrailingZero && tail.length === 3 && tail.endsWith("0");
+		if (tail.length > 2 && !misreadSuffix) {
 			return "three or more digits after the point: decimal or thousands?";
 		}
 		const integer = integerPart(head);
 		if (integer === null) return "comma is not a valid thousands separator";
-		return { integer, fraction: tail, notes };
+		if (misreadSuffix) notes.push("suffix_misread_as_digit");
+		return { integer, fraction: tail.slice(0, 2), notes };
 	}
 	if (!blob.includes(",")) return { integer: blob, fraction: "", notes };
 
@@ -119,7 +150,12 @@ function read(blob: string, spaced: string | undefined): Reading | string {
 }
 
 /** Every number in a piece of receipt text, in order. Thai digits are accepted. */
-export function parseNumberTokens(text: string): NumberToken[] {
+export function parseNumberTokens(
+	text: string,
+	options: ParseNumberOptions = {},
+): NumberToken[] {
+	const suffixes = options.suffixes ?? DEFAULT_SUFFIXES;
+	const repairTrailingZero = options.repairTrailingZero ?? true;
 	const ascii = thaiDigitsToAscii(text);
 	const tokens: NumberToken[] = [];
 	for (const match of ascii.matchAll(TOKEN)) {
@@ -133,7 +169,7 @@ export function parseNumberTokens(text: string): NumberToken[] {
 			continue;
 		}
 
-		const reading = read(blob, spaced);
+		const reading = read(blob, spaced, repairTrailingZero);
 		const token: NumberToken = {
 			raw,
 			start,
@@ -160,7 +196,7 @@ export function parseNumberTokens(text: string): NumberToken[] {
 		// A suffix flag only follows a full amount (two decimals). Letters
 		// after anything else are units or words ("330ML"), not flags.
 		if (letters !== undefined && token.decimals === 2) {
-			const known = KNOWN_SUFFIXES.find((suffix) => suffix === letters);
+			const known = suffixes.find((suffix) => suffix === letters);
 			if (known) token.suffix = known;
 			else token.notes.push("unknown_suffix");
 		} else if (letters !== undefined) {
@@ -172,7 +208,7 @@ export function parseNumberTokens(text: string): NumberToken[] {
 	return tokens;
 }
 
-export interface NumbersInOptions {
+export interface NumbersInOptions extends ParseNumberOptions {
 	/** Leave out @unit-price tokens: use when looking for a line amount or total. */
 	excludeUnitPrices?: boolean;
 }
@@ -186,7 +222,7 @@ export function numbersIn(
 	options: NumbersInOptions = {},
 ): Set<number> {
 	const found = new Set<number>();
-	for (const token of parseNumberTokens(text)) {
+	for (const token of parseNumberTokens(text, options)) {
 		if (token.value === null) continue;
 		if (options.excludeUnitPrices && token.kind === "unit_price") continue;
 		found.add(Math.abs(toSatang(token.value)));
@@ -195,6 +231,11 @@ export function numbersIn(
 }
 
 /** Tokens that could not be read safely; callers should surface these, not drop them. */
-export function ambiguousNumbers(text: string): NumberToken[] {
-	return parseNumberTokens(text).filter((token) => token.ambiguous !== null);
+export function ambiguousNumbers(
+	text: string,
+	options: ParseNumberOptions = {},
+): NumberToken[] {
+	return parseNumberTokens(text, options).filter(
+		(token) => token.ambiguous !== null,
+	);
 }
