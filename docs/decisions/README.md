@@ -11,4 +11,4 @@ it. Add a new numbered file rather than rewriting an old one.
 | [0003](0003-learned-catalog-vs-scraped-catalog.md) | Product catalog learned from receipts, not scraped | Accepted |
 | [0004](0004-ocr-text-llm-with-vision-fallback.md) | OCR + text LLM, Claude Haiku vision as fallback | Accepted, to be validated by evals |
 | [0005](0005-local-ocr-python-subprocess.md) | Local OCR runs the official Python runtime in a subprocess | Accepted |
-| [0006](0006-pending-schema-changes-from-first-receipt.md) | Layout-dependent schema changes, counting rule and footer boundary, from three old receipts (2014, 2015, 2020) | Proposed, waiting for a current receipt |
+| [0006](0006-pending-schema-changes-from-first-receipt.md) | Layout-dependent schema changes, counting rule and footer boundary, from three old 7-Eleven receipts (2014, 2015, 2020); other chains out of scope | Proposed, waiting for a current receipt |

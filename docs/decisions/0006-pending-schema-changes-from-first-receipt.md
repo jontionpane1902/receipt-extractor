@@ -39,6 +39,8 @@ print, not how a receipt is laid out:
   (`selectTaxIdWindow`).
 - Look-alike character costs in catalog similarity.
 - Labels can mark fields the labeller could not read (`uncertain`).
+- Amount suffixes are a configurable set (N, NP, V), and a suffix letter
+  that OCR read as a trailing zero is repaired and flagged.
 - The printed item count is a soft signal: the check warns instead of
   failing, and quantity recovery may confirm with it but not deduce from
   it (changed after the 2020 receipt; see row 9).
@@ -159,6 +161,32 @@ Why it is only a proposal:
 Until it exists, the grounding check can be satisfied by text from these
 blocks: small whole numbers there (terms numbered 1 to 3, a rights count,
 a points figure) can ground a quantity or an item count by accident.
+
+## Other chains (out of scope for now)
+
+A receipt from another chain (a third-party image, as a photo and as a
+cropped scan) was run as a trial. **7-Eleven remains the only target;
+nothing below is planned.** It is recorded because it shows which parts of
+the current design are 7-Eleven-specific.
+
+What that layout needs that the 7-Eleven layouts do not:
+
+| # | That chain's layout | What it would need | Status today |
+| --- | --- | --- | --- |
+| C1 | No quantity column on item rows | Quantity defaults to 1 only when the layout says so; nothing to recover from dropped digits | Not handled; the 7-Eleven quantity logic does not apply |
+| C2 | A multi-quantity item is a name row followed by a separate row holding quantity, `@`, unit price and amount | Join the two rows into one item | Not handled |
+| C3 | Weighed items, marked per kilogram in the name | A weight/unit field, or accept them as quantity 1 | Not handled |
+| C4 | A cancelled-items section: a heading, the item again with a negative amount, then the item re-entered with a "price change" row | Line types for void and re-entry; the arithmetic is Σ amounts including the negatives | Arithmetic closes if every amount row is summed with its sign; no schema for it |
+| C5 | Every amount carries a one-letter suffix (two letters seen), not only some | Suffix set per chain | Suffix set is configurable; the common letter was never read correctly by OCR on either capture |
+| C6 | Date printed with a Gregorian two-digit year | Era by chain or layout | The date parser's "closest non-future reading" rule already chose correctly |
+| C7 | Document title printed at the bottom, in English | Do not rely on the title's position | Nothing depends on it |
+| C8 | The header carries a store phone number | The proposed footer rule "cut after the first phone-like row" would cut the whole receipt | Another reason that rule needs the payment-row anchor before it is built |
+| C9 | No printed item count; totals labels differ again | Layout detection would return "unknown" | Soft count default is the right behaviour |
+
+Two findings from this trial changed shared code, because they are about
+OCR on thermal print rather than about a layout: a suffix letter read as a
+trailing zero is now repaired and flagged, and ten look-alike character
+pairs were added to the catalog table.
 
 ## What would settle it
 

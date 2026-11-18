@@ -156,6 +156,13 @@ they are swapped inside an otherwise identical cluster.
 | พ / ฟ / ห | differ by the tail or middle stroke |
 | ด / ต | differ by the notch on the head |
 | ื / ี | upper vowels one small stroke apart |
+| จ / ด, ค / ด, ค / จ, จ / ล, จ / ฯ | round-headed letters collapsing, mostly on low-resolution photos |
+| ล / อ, ย / อ | open versus closed bowl |
+| น / พ, น / ฟ, ต / ห | seen 4–5 times each on one clear receipt |
+
+A pair is admitted when it was seen on at least two different labelled
+receipts, or at least three times in total. Pairs stay separate groups, so
+A/B and B/C never imply A/C.
 
 The table only changes how similar two names look. The trust floor, the
 same-price rule and the tie rule are unchanged, and `matchName` accepts
