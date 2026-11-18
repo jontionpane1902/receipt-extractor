@@ -108,11 +108,30 @@ describe("look-alike substitutions", () => {
 	});
 
 	test("the default table is small and every cost is a fraction of an edit", () => {
-		expect(DEFAULT_LOOKALIKES).toHaveLength(4);
+		expect(DEFAULT_LOOKALIKES.length).toBeLessThanOrEqual(16);
 		for (const group of DEFAULT_LOOKALIKES) {
 			expect(group.cost).toBeGreaterThan(0);
 			expect(group.cost).toBeLessThan(1);
 		}
+	});
+
+	test("pairs added from later receipts cost a fraction of an edit", () => {
+		for (const [a, b] of [
+			["จาน", "ดาน"],
+			["คาว", "ดาว"],
+			["ลาย", "อาย"],
+			["นาง", "พาง"],
+			["ตาม", "หาม"],
+		] as const) {
+			expect(similarity(a, b, withTable)).toBeCloseTo(1 - 0.25 / 3, 10);
+		}
+	});
+
+	test("pairs do not chain: A/B and B/C do not make A/C a look-alike", () => {
+		// ล/อ and ย/อ are in the table; ล/ย is not.
+		expect(similarity("ลาน", "ยาน", withTable)).toBeCloseTo(2 / 3, 10);
+		// น/พ and พ/ห are in the table; น/ห is not.
+		expect(similarity("นาม", "หาม", withTable)).toBeCloseTo(2 / 3, 10);
 	});
 
 	test("a custom table can be supplied", () => {

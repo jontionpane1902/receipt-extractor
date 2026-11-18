@@ -61,23 +61,45 @@ export interface LookalikeGroup {
 export const LOOKALIKE_COST = 0.25;
 
 /**
- * Default look-alike table. Deliberately small: only confusions actually
- * observed on a thermal-printed receipt read by the OCR model, where the
- * shapes differ by a small stroke.
+ * Default look-alike table: only confusions actually observed between
+ * owner-labelled receipts and the OCR model's reading of them.
  *
- *   ข / ช        differ by the notch on the head
- *   พ / ฟ / ห    differ by the tail or the middle stroke
- *   ด / ต        differ by the notch on the head
- *   ื / ี        upper vowels that differ by one small stroke
+ * Admission rule: a pair is added when it was seen on at least two
+ * different receipts, or at least three times in total. Pairs are kept as
+ * separate two-character groups unless every member was seen confused
+ * with every other, so that A/B and B/C never imply A/C.
  *
- * Add a group only with evidence from real OCR output, and re-run the
- * catalog eval: every entry makes two different names look more alike.
+ * First receipt (thermal print, shapes one small stroke apart):
+ *   ข / ช        notch on the head
+ *   พ / ฟ / ห    tail or middle stroke
+ *   ด / ต        notch on the head
+ *   ื / ี        upper vowels one small stroke apart
+ *
+ * Added after four labelled receipts (six captures):
+ *   จ / ด, ค / ด, ค / จ, จ / ล, จ / ฯ   round-headed letters collapsing,
+ *                                      mostly on low-resolution photos
+ *   ล / อ, ย / อ                        open versus closed bowl
+ *   น / พ, น / ฟ, ต / ห                 seen on one clear receipt, 4–5 times each
+ *
+ * Every entry makes two different names look more alike. Re-run the
+ * catalog eval on all labelled receipts after any change and check for
+ * false merges.
  */
 export const DEFAULT_LOOKALIKES: readonly LookalikeGroup[] = [
 	{ chars: ["ข", "ช"], cost: LOOKALIKE_COST },
 	{ chars: ["พ", "ฟ", "ห"], cost: LOOKALIKE_COST },
 	{ chars: ["ด", "ต"], cost: LOOKALIKE_COST },
 	{ chars: ["ื", "ี"], cost: LOOKALIKE_COST },
+	{ chars: ["จ", "ด"], cost: LOOKALIKE_COST },
+	{ chars: ["ค", "ด"], cost: LOOKALIKE_COST },
+	{ chars: ["ค", "จ"], cost: LOOKALIKE_COST },
+	{ chars: ["จ", "ล"], cost: LOOKALIKE_COST },
+	{ chars: ["จ", "ฯ"], cost: LOOKALIKE_COST },
+	{ chars: ["ล", "อ"], cost: LOOKALIKE_COST },
+	{ chars: ["ย", "อ"], cost: LOOKALIKE_COST },
+	{ chars: ["น", "พ"], cost: LOOKALIKE_COST },
+	{ chars: ["น", "ฟ"], cost: LOOKALIKE_COST },
+	{ chars: ["ต", "ห"], cost: LOOKALIKE_COST },
 ];
 
 /** No substitutions: every differing cluster costs a full edit. */
