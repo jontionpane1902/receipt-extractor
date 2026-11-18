@@ -22,6 +22,7 @@ import {
 } from "@receipt-extractor/core";
 import { createLocalOpenThaiOcr } from "./create.ts";
 import { REPO_ROOT, readModelPin } from "./paths.ts";
+import { describePdf, renderPdfPage } from "./pdf.ts";
 import { OpenThaiLocalProvider } from "./provider.ts";
 
 const enabled = process.env.OPENTHAI_INTEGRATION === "1";
@@ -176,3 +177,68 @@ describe.skipIf(!enabled)(
 		}, 120_000);
 	},
 );
+
+/**
+ * A minimal one-page PDF whose page is a single 40x20 grey image (a
+ * gradient), written by hand so no PDF library or real document is needed.
+ */
+function inventedScanPdf(): Uint8Array {
+	const width = 40;
+	const height = 20;
+	const pixels = Buffer.alloc(width * height);
+	for (let i = 0; i < pixels.length; i++) pixels[i] = (i % width) * 6;
+	const content = `q ${width * 2} 0 0 ${height * 2} 0 0 cm /Im0 Do Q`;
+	const objects = [
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width * 2} ${height * 2}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`,
+		`<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceGray /BitsPerComponent 8 /Length ${pixels.length} >>\nstream\n${pixels.toString("latin1")}\nendstream`,
+		`<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+	];
+	let body = "%PDF-1.4\n";
+	const offsets: number[] = [];
+	objects.forEach((object, index) => {
+		offsets.push(body.length);
+		body += `${index + 1} 0 obj\n${object}\nendobj\n`;
+	});
+	const xref = body.length;
+	body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+	return Buffer.from(body, "latin1");
+}
+
+describe.skipIf(!enabled)("PDF rendering — real pdfium, invented PDF", () => {
+	test("reports the embedded image size and renders at native resolution", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "ocr-pdf-int-"));
+		try {
+			const pdf = join(dir, "invented.pdf");
+			await Bun.write(pdf, inventedScanPdf());
+
+			const info = await describePdf(pdf);
+			expect(info.page_count).toBe(1);
+			expect(info.page_size_pt).toEqual([80, 40]);
+			expect(info.images).toMatchObject([
+				{ width: 40, height: 20, page_share: 1 },
+			]);
+			expect(info.native_scale).toBe(0.5);
+
+			const native = await renderPdfPage(pdf, { outDir: dir });
+			expect(native.render).toMatchObject({
+				width: 40,
+				height: 20,
+				mode: "native",
+			});
+			const doubled = await renderPdfPage(pdf, { outDir: dir, scale: 2 });
+			expect(doubled.render).toMatchObject({ width: 80, height: 40 });
+			expect(doubled.render.png).not.toBe(native.render.png);
+			// PNG signature: a real image was written.
+			const bytes = new Uint8Array(await readFile(native.render.png));
+			expect([...bytes.slice(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
+
+			await expect(
+				renderPdfPage(pdf, { outDir: dir, page: 2 }),
+			).rejects.toThrow(/page 2 does not exist/);
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	}, 60_000);
+});

@@ -65,6 +65,29 @@ line, each with its own confidence. The lines the model's own filter
 removed are listed at the end with their confidence and the reason. The
 image is read locally and the output goes to the terminal only.
 
+## PDF input
+
+```sh
+bun run ocr scan.pdf                 # page 1, at the scan's own resolution
+bun run ocr scan.pdf --page 2
+bun run ocr scan.pdf --scale 2       # twice the pixels per side
+bun run ocr scan.pdf --dpi 300       # absolute resolution
+```
+
+A PDF is recognised by its signature, rendered to a PNG on this machine by
+`python/render_pdf.py` (pypdfium2) and then read like any image. Only one
+page is read per run; the output says how many pages were not.
+
+A scanned PDF is normally one image filling the page. Rendering it larger
+than that image adds no detail, so the default is the embedded image's own
+pixel size. A page that is not a single full-page image is rendered at
+200 dpi. Rendered pages go to `.cache/pdf-render/` (git-ignored): they are
+as private as the PDF. The OCR cache is keyed by the rendered PNG, so every
+PDF, page and render setting gets its own entry.
+
+`describePdf()` / `python/render_pdf.py <file> --info` report page count,
+page size and embedded image sizes without rendering anything.
+
 ## Tests
 
 ```sh
@@ -114,6 +137,7 @@ or its libraries print goes to stderr and is attached to error messages.
 | `python/openthai_ocr/protocol.py` | Request dict → response dict; transport-agnostic |
 | `python/worker.py` | stdio transport (thin) |
 | `python/download_weights.py` | Download entry point (thin) |
+| `python/render_pdf.py` | Describe a PDF and render one page to PNG |
 
 For the container milestone, an HTTP server calls `protocol.handle` with
 the same engine; nothing else changes.

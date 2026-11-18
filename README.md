@@ -122,6 +122,7 @@ bun run ocr:setup                    # venv + pinned deps + verified weights
 bun run test:ocr                     # real model on a generated test image
 bun run ocr <image-path>             # OCR one image: rows, confidence, dropped lines
 bun run ocr <image-path> --json      # same, as JSON (with boxes)
+bun run ocr <scan.pdf> [--page N] [--scale F | --dpi N]   # a PDF is rendered locally first
 bun run eval --ocr openthai-local    # synthetic eval with real OCR
 ```
 

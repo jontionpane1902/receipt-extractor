@@ -1,7 +1,11 @@
 /**
  * OCR one image with the local OpenThai model and print what it read.
  *
- *   bun run ocr <image-path> [--json] [--no-cache] [--backend openvino|onnxruntime]
+ *   bun run ocr <image-or-pdf> [--json] [--no-cache] [--backend openvino|onnxruntime]
+ *                              [--page N] [--scale F | --dpi N]
+ *
+ * A PDF is rendered to a PNG first (page 1 unless --page is given), at the
+ * embedded scan's own resolution unless --scale or --dpi says otherwise.
  *
  * Runs entirely on this machine: the image is read by the Python worker
  * and nothing is sent anywhere. Output goes to stdout only; the result is
@@ -16,9 +20,10 @@ import {
 	type OcrResult,
 } from "@receipt-extractor/core";
 import { createLocalOpenThaiOcr } from "./create.ts";
+import { isPdf, renderPdfPage } from "./pdf.ts";
 
 export const USAGE =
-	"usage: bun run ocr <image-path> [--json] [--no-cache] [--backend openvino|onnxruntime]";
+	"usage: bun run ocr <image-or-pdf> [--json] [--no-cache] [--backend openvino|onnxruntime] [--page N] [--scale F | --dpi N]";
 
 const MIME_TYPES: Record<string, string> = {
 	".png": "image/png",
@@ -96,6 +101,8 @@ export interface CliDeps {
 		provider: OcrProvider;
 		close(): Promise<void>;
 	};
+	/** Renders a PDF page to a PNG. Replaceable for tests. */
+	renderPdf?: typeof renderPdfPage;
 	stdout(text: string): void;
 	stderr(text: string): void;
 }
@@ -141,9 +148,29 @@ export async function main(
 		return 2;
 	}
 
+	const number = (name: "page" | "scale" | "dpi"): number | undefined =>
+		values[name] === undefined ? undefined : Number(values[name]);
+	const pdfOptions = {
+		...(number("page") === undefined ? {} : { page: number("page") as number }),
+		...(number("scale") === undefined
+			? {}
+			: { scale: number("scale") as number }),
+		...(number("dpi") === undefined ? {} : { dpi: number("dpi") as number }),
+	};
+
 	let bytes: Uint8Array;
+	let imagePath = path;
+	let source = path;
 	try {
-		bytes = new Uint8Array(await readFile(path));
+		if (await isPdf(path)) {
+			const pdf = await (deps.renderPdf ?? renderPdfPage)(path, pdfOptions);
+			imagePath = pdf.render.png;
+			source = `${path} — page ${pdf.page} of ${pdf.page_count}, rendered ${pdf.render.width}x${pdf.render.height} px (${pdf.render.mode}, ${pdf.render.dpi} dpi)${pdf.page_count > 1 ? `; ${pdf.page_count - 1} other page(s) not read, use --page` : ""}`;
+		} else if (Object.keys(pdfOptions).length > 0) {
+			deps.stderr(`--page, --scale and --dpi only apply to a PDF\n${USAGE}\n`);
+			return 2;
+		}
+		bytes = new Uint8Array(await readFile(imagePath));
 	} catch (error) {
 		deps.stderr(`cannot read ${path}: ${(error as Error).message}\n`);
 		return 1;
@@ -158,10 +185,11 @@ export async function main(
 		const result = await ocr.provider.recognize({
 			bytes,
 			mime_type:
-				MIME_TYPES[extname(path).toLowerCase()] ?? "application/octet-stream",
+				MIME_TYPES[extname(imagePath).toLowerCase()] ??
+				"application/octet-stream",
 		});
 		deps.stdout(
-			values.json ? formatJson(path, result) : formatText(path, result),
+			values.json ? formatJson(source, result) : formatText(source, result),
 		);
 		return 0;
 	} catch (error) {
@@ -180,6 +208,9 @@ function parse(argv: readonly string[]) {
 			json: { type: "boolean", default: false },
 			"no-cache": { type: "boolean", default: false },
 			backend: { type: "string" },
+			page: { type: "string" },
+			scale: { type: "string" },
+			dpi: { type: "string" },
 			help: { type: "boolean", short: "h", default: false },
 		},
 	});

@@ -83,6 +83,12 @@ Local OCR (`packages/ocr-openthai`):
   globally. Re-lock with the command at the top of `requirements.in`.
 - OCR output is cached in `.cache/ocr/` (git-ignored), keyed by image
   SHA-256 + model revision + backend. Treat the cache as private data.
+- PDFs are rendered to PNG by `python/render_pdf.py` (pypdfium2) into
+  `.cache/pdf-render/` (git-ignored, private like the source). Default is
+  the embedded scan's own resolution: never upsample by default. The OCR
+  cache is keyed by the rendered PNG's bytes, so each PDF, page and render
+  setting has its own entry. The no-viewing rule for `private/` covers
+  PDFs and anything rendered from them.
 - Unit tests use a stub process (`test/stub-worker.ts`) and must not need
   Python. The real model runs only in `integration.test.ts`, opt-in.
 
@@ -105,8 +111,10 @@ bun run eval             # eval runner on synthetic samples (no network)
 bun run ocr:setup        # once: python/.venv + pinned deps + verified weights (needs uv)
 bun run test:ocr         # opt-in: real OpenThai model on the synthetic image
 bun run ocr <image> [--json] [--no-cache]   # OCR one image locally, print rows + confidence + dropped
+bun run ocr <scan.pdf> [--page N] [--scale F | --dpi N]   # PDF: page rendered locally to .cache/pdf-render/, then OCR
 bun run eval --ocr openthai-local   # synthetic eval with the real local OCR
 bun run eval --label <label.json> --ocr openthai-local   # one labelled receipt, OCR-level only, prints, never writes
+bun run eval --label <label.json> --image <other-file> --ocr openthai-local   # same label, another capture (rescan, PDF)
 ```
 
 `bun test`, CI and the default `bun run eval` must stay offline: no

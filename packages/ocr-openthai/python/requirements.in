@@ -6,3 +6,5 @@ onnxruntime
 opencv-python-headless
 pyclipper
 numpy
+# PDF input: renders a page to an image for OCR (render_pdf.py).
+pypdfium2
