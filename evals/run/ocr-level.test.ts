@@ -320,15 +320,72 @@ describe("evaluateOcrAgainstLabel (invented receipt)", () => {
 			"pass",
 		);
 
-		// Without the recovered quantity there is no proof, so no unit price.
+		// Without the recovered quantity the strict path has no proof, so it
+		// gives no unit price (the inferred path is measured separately).
 		const noQty = await evaluateOcrAgainstLabel(
 			label,
 			{ ...misread, dropped: [] },
 			NOW,
+			{ inferUnitPrice: false },
 		);
 		expect(noQty.items[1]).toMatchObject({
 			ocr_unit_price: null,
 			unit_price_repair: null,
+		});
+	});
+
+	test("with no quantity at all, unit price and quantity are inferred and marked so", async () => {
+		const noDigits: OcrResult = {
+			...ocr,
+			lines: ocr.lines.map((l) =>
+				l.text === "@12.00" ? { ...l, text: "812.00" } : l,
+			),
+			dropped: [],
+		};
+		const on = await evaluateOcrAgainstLabel(label, noDigits, NOW);
+		expect(on.items[1]).toMatchObject({
+			ocr_unit_price: 12,
+			unit_price_source: "inferred",
+			unit_price_repair: "leading_character_removed",
+			qty_ok: true,
+			quantity_conflict: false,
+		});
+		expect(on.items[1]?.quantity).toMatchObject({
+			qty: 3,
+			source: "inferred",
+			trust: "low",
+		});
+		expect(on.catalog[1]?.price_source).toBe("inferred");
+		// single-amount rows are not assumed to be quantity 1
+		expect(on.items[0]?.quantity.qty).toBeNull();
+
+		const off = await evaluateOcrAgainstLabel(label, noDigits, NOW, {
+			inferUnitPrice: false,
+		});
+		expect(off.items[1]).toMatchObject({
+			ocr_unit_price: null,
+			unit_price_source: null,
+		});
+		expect(off.items[1]?.quantity.qty).toBeNull();
+	});
+
+	test("an inference that disagrees with a recovered quantity is a conflict, not an overwrite", async () => {
+		// The dropped digit says 2; the amounts say 3 × 12.00 = 36.00.
+		const conflicting: OcrResult = {
+			...ocr,
+			lines: ocr.lines.map((l) =>
+				l.text === "@12.00" ? { ...l, text: "อ12.00" } : l,
+			),
+			dropped: [droppedDigit("1", 2), droppedDigit("2", 3)],
+		};
+		const report = await evaluateOcrAgainstLabel(label, conflicting, NOW);
+		expect(report.items[1]?.quantity).toMatchObject({
+			qty: 2,
+			source: "dropped",
+		});
+		expect(report.items[1]).toMatchObject({
+			quantity_conflict: true,
+			ocr_unit_price: null,
 		});
 	});
 

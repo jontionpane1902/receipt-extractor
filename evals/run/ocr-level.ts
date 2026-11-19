@@ -5,11 +5,13 @@ import {
 	checkLineAmounts,
 	checkTotal,
 	checkVat,
+	combineQuantityAndPrice,
 	DEFAULT_LOOKALIKES,
 	editDistance,
 	graphemes,
 	groupRows,
 	InMemoryCatalogStore,
+	inferUnitPriceAndQuantity,
 	matchName,
 	NO_LOOKALIKES,
 	numbersIn,
@@ -24,6 +26,7 @@ import {
 	type ResolvedQuantity,
 	recoverUnitPrice,
 	resolveQuantities,
+	rowRole,
 	SCHEMA_VERSION,
 	selectTaxIdWindow,
 	similarity,
@@ -73,6 +76,12 @@ export interface ItemReading {
 	ocr_unit_price: number | null;
 	/** Set when the unit price was accepted by arithmetic, not read with its "@" marker. */
 	unit_price_repair: string | null;
+	/** "read" (with its @), "confirmed" (known quantity proves it) or "inferred" (from the two amounts). */
+	unit_price_source: "read" | "confirmed" | "inferred" | null;
+	/** An inferred quantity disagreed with a read or recovered one, which was kept. */
+	quantity_conflict: boolean;
+	/** Two amounts on the row that arithmetic could not explain, or explained in more than one way. */
+	unit_price_unresolved: "ambiguous" | "unexplained" | null;
 	expected_qty: number;
 	/** Quantity with the item count as a soft signal (the default rule). */
 	quantity: ResolvedQuantity;
@@ -94,7 +103,7 @@ export interface CatalogReading {
 	ocr_name: string | null;
 	price_used: number | null;
 	/** "ocr": unit price or amount ÷ quantity read from OCR. "assumed_qty_1": amount read, quantity unknown. */
-	price_source: "ocr" | "assumed_qty_1" | "none";
+	price_source: "ocr" | "inferred" | "assumed_qty_1" | "none";
 	before: { kind: string; similarity: number; correct: boolean };
 	after: { kind: string; similarity: number; correct: boolean };
 }
@@ -230,10 +239,20 @@ const minConfidence = (lines: readonly OcrLine[]) => {
 	return scores.length ? Math.min(...scores) : null;
 };
 
+export interface OcrLevelOptions {
+	/**
+	 * Infer unit price and quantity from a row's two amounts when the
+	 * quantity is unknown (lower trust). Default true; false measures the
+	 * strict paths alone.
+	 */
+	inferUnitPrice?: boolean;
+}
+
 export async function evaluateOcrAgainstLabel(
 	label: Label,
 	ocr: OcrResult,
 	now: Date,
+	options: OcrLevelOptions = {},
 ): Promise<OcrLevelReport> {
 	const { expected } = label;
 	const unsure = new Set(label.uncertain);
@@ -308,7 +327,7 @@ export async function evaluateOcrAgainstLabel(
 		const ambiguous = tokens.filter((t) => t.ambiguous !== null);
 		const ocrAmount = amountToken?.value ?? null;
 		const reference = graphemes(want.raw_name.normalize("NFC"));
-		const quantity = resolution.quantities[index] ?? unknownQuantity;
+		const resolved = resolution.quantities[index] ?? unknownQuantity;
 		const quantityIfPieces = ifPieces.quantities[index] ?? unknownQuantity;
 		// "@unit" is rarely read with its marker. Accept the token before the
 		// amount as the unit price only when qty × it = amount.
@@ -319,9 +338,35 @@ export async function evaluateOcrAgainstLabel(
 				? null
 				: recoverUnitPrice(
 						candidateLine.text,
-						quantity.qty,
+						resolved.qty,
 						ocrAmount === null ? null : Math.abs(ocrAmount),
 					);
+		const restTexts = (part?.rest ?? []).map((line) => line.text);
+		const inference =
+			options.inferUnitPrice === false || !part
+				? null
+				: inferUnitPriceAndQuantity(restTexts, {
+						role: rowRole(part.name?.text ?? "", restTexts),
+					});
+		const combined = combineQuantityAndPrice(
+			{
+				quantity: resolved.qty,
+				quantity_source:
+					resolved.source === "inferred" ? null : resolved.source,
+			},
+			unitToken?.value ?? null,
+			recoveredUnit,
+			inference,
+		);
+		const quantity: ResolvedQuantity =
+			combined.quantity_source === "inferred"
+				? {
+						qty: combined.quantity,
+						source: "inferred",
+						trust: "low",
+						confidence: null,
+					}
+				: resolved;
 		const droppedBest = part
 			? null
 			: (ocr.dropped ?? [])
@@ -361,8 +406,16 @@ export async function evaluateOcrAgainstLabel(
 			],
 			suffix: amountToken?.suffix ?? null,
 			expected_unit_price: want.unit_price,
-			ocr_unit_price: unitToken?.value ?? recoveredUnit?.unit_price ?? null,
-			unit_price_repair: recoveredUnit?.repair ?? null,
+			ocr_unit_price: combined.unit_price,
+			unit_price_source: combined.unit_price_source,
+			unit_price_repair:
+				recoveredUnit?.repair ??
+				(combined.unit_price_source === "inferred" &&
+				inference?.status === "inferred"
+					? inference.repair
+					: null),
+			quantity_conflict: combined.conflict,
+			unit_price_unresolved: combined.unresolved,
 			expected_qty: want.qty,
 			quantity,
 			qty_ok: quantity.qty === want.qty,
@@ -548,9 +601,11 @@ export async function evaluateOcrAgainstLabel(
 		const priceSource =
 			price === null
 				? "none"
-				: item.ocr_unit_price !== null || item.quantity.qty !== null
-					? "ocr"
-					: "assumed_qty_1";
+				: item.unit_price_source === "inferred"
+					? "inferred"
+					: item.ocr_unit_price !== null || item.quantity.qty !== null
+						? "ocr"
+						: "assumed_qty_1";
 		const run = async (lookalikes: typeof DEFAULT_LOOKALIKES) => {
 			if (item.ocr_name === null)
 				return { kind: "none", similarity: 0, correct: false };
