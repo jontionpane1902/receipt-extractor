@@ -186,6 +186,51 @@ more" would have recovered both the unit price and the quantity on all
 four rows, but it infers the quantity instead of confirming it and is not
 implemented.
 
+## Trust levels for quantity and unit price
+
+Implemented in `packages/core/structure`. A quantity or unit price always
+carries where it came from, and a lower level never overwrites a higher
+one.
+
+| Quantity source | Meaning | Trust |
+| --- | --- | --- |
+| `printed` | Read as a normal OCR line at the start of the row | Highest |
+| `dropped` | Recovered from a one-character line the OCR backend filtered out | Low until confirmed |
+| `deduced` | Filled in from the printed item count, only for a layout whose counting rule is established | Low; not used by default |
+| `inferred` | Deduced from the row's own two amounts: line amount ÷ unit price is a whole number from 2 to 99 | Low; never confirmed by anything independent |
+| unknown | Nothing on the row says | — |
+
+| Unit price source | Meaning |
+| --- | --- |
+| `read` | Printed with its `@` and read as such |
+| `confirmed` | Marker lost or misread, but a known quantity × price = amount proves it |
+| `inferred` | Obtained together with an inferred quantity |
+
+Rules for the inferred path:
+
+- It applies only to an item row with exactly two amounts and a positive
+  line amount. Totals, payment and discount rows are excluded by role: a
+  negative amount, a printed piece count beside the amounts, or a row
+  opening that resembles a totals, payment or discount label (matched
+  fuzzily, because OCR damages labels). A product whose name resembles a
+  label is treated as a non-item, which only stops the rule from firing.
+- Candidates are the price as read and the price with one leading
+  character removed (the misread `@`). If both give a valid but different
+  answer the row is flagged **ambiguous** and nothing changes. This is
+  common when the marker is lost entirely: a price of 24.00 against 48.00
+  is 2 × 24.00, and also 12 × 4.00 if the leading 2 was the marker.
+- If the inferred quantity disagrees with a printed or recovered one, the
+  latter stays and a **conflict** is raised.
+- A row with one amount and no quantity is **not** assumed to be
+  quantity 1. That remains unknown.
+- The printed item count is not used to change any of this.
+- The catalog's same-price rule receives the inferred unit price, marked
+  as inferred.
+
+Measured on eight labelled captures: 4 rows inferred, all agreeing with
+the label; 1 row flagged ambiguous; no row inferred outside the item
+rows. Four positives is far too few to call the rule validated.
+
 ## Untested hypothesis: what the new-layout item count counts
 
 From two new-layout receipts only. **Not implemented; the count stays a
