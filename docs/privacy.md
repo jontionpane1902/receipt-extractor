@@ -30,6 +30,24 @@ their habits. This project treats every receipt image as personal data.
 - The only test image in the repository is generated from invented text
   (`evals/dataset/synthetic/images/`), not photographed.
 
+## Private receipts used during development
+
+While building the OCR and parsing code, the local OCR was run on a few
+real receipts stored only on the author's machine, in a git-ignored
+folder. All of them were third-party images found in public posts. For
+those:
+
+- the images, any image rendered from them, their OCR text and their
+  labels were never committed, and the repository history has been
+  searched for their item names, branch names and codes, identifiers,
+  phone numbers and file names;
+- OCR ran with the local model only; the images were not sent to any API;
+- tests and documentation use invented names and numbers. What was learned
+  is recorded in general terms in `docs/decisions/0006`.
+
+They will not be published. A public eval set will come only from
+receipts the author has the right to share, redacted as described below.
+
 ## Redaction before anything is committed
 
 1. Black out member numbers, phone numbers, names, card digits,

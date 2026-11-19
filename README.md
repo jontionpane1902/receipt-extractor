@@ -3,11 +3,15 @@
 Turns a photo of a Thai convenience-store receipt into structured,
 validated data. 7-Eleven Thailand first.
 
-> **Status: early.** The core library (schema, OCR interface, validation
-> checks, catalog matching), the eval harness and a local OCR provider
-> running the open OpenThai model exist and are tested. No LLM or API is
-> wired up yet, no real receipt has been processed, and there are **no
-> accuracy results yet**. See the [roadmap](#roadmap).
+> **Status: early, and honest about it.** What exists and is tested: the
+> core library (schema, OCR interface, receipt-aware number parsing,
+> validation checks, quantity and unit-price recovery, catalog matching),
+> a local OCR provider running the open OpenThai model (images and PDFs),
+> and an eval harness. What does not exist yet: the LLM structuring step,
+> the vision fallback, the API and the web app. There are **no accuracy
+> results yet**, and every eval sample in this repository is synthetic.
+> See [what has been measured](#what-has-been-measured-so-far) and the
+> [roadmap](#roadmap).
 
 ## What it does
 
@@ -46,7 +50,7 @@ flowchart LR
 | Stage | What | Where |
 | --- | --- | --- |
 | OCR | [`iapp/OpenThai2.0-OCR-Text`](https://huggingface.co/iapp/OpenThai2.0-OCR-Text) (Apache-2.0, ONNX, CPU). Open weights locally for evals; iApp hosted API in the cloud. Behind one interface. | `packages/core/ocr` (interface), `packages/ocr-openthai` (local provider) |
-| Structuring | Cheap text LLM maps OCR lines to the schema. May not rewrite names. | `packages/core/structure` (interface only) |
+| Structuring | Cheap text LLM maps OCR lines to the schema. May not rewrite names. | `packages/core/structure` (interface, plus deterministic helpers; no LLM yet) |
 | Validation | Arithmetic, date (Buddhist era → Gregorian), tax ID, grounding, OCR confidence. | `packages/core/validate` |
 | Fallback | Claude Haiku with the original image, only when checks fail. | planned |
 | Catalog | Product names learned from receipts; conservative fuzzy matching by Thai grapheme clusters. | `packages/core/catalog` |
@@ -58,7 +62,8 @@ the main choices: [docs/decisions/](docs/decisions/).
 ## Results
 
 No real results yet. This table will be filled only from files in
-`evals/results/` produced on real, hand-labelled receipts.
+`evals/results/` produced on real, hand-labelled, redacted receipts with
+the full pipeline.
 
 | Metric | Easy | Hard | All |
 | --- | --- | --- | --- |
@@ -78,6 +83,29 @@ Run configuration (to be filled with each result): OCR provider and
 model, structuring model, prompt version, schema version, git commit.
 
 Metric definitions and the label format: [evals/README.md](evals/README.md).
+
+### What has been measured so far
+
+- **In this repository:** only synthetic data. The eval samples under
+  `evals/dataset/synthetic/` are invented, and the one committed image is
+  generated from invented text. Running `bun run eval` exercises the
+  harness; its numbers are not accuracy and are never written to this
+  README.
+- **Outside this repository:** during development the local OCR was run on
+  a handful of real receipts kept privately on the author's machine, all
+  of them third-party images found in public posts, used only locally and
+  never committed. They were used to find
+  failure modes — how thermal print bends numbers, which characters OCR
+  confuses, what the schema cannot express — and each finding became code
+  with tests on invented data, or a note in
+  [docs/decisions/0006](docs/decisions/0006-pending-schema-changes-from-first-receipt.md).
+  Those receipts, their OCR text and their labels are not in the
+  repository, the sample is far too small to be a benchmark, and nothing
+  measured on them is presented here as a result.
+
+A real results table needs two things that do not exist yet: the
+structuring step, and a set of receipts that can be published in redacted
+form.
 
 ## Privacy
 
@@ -142,11 +170,13 @@ installed outside the repository. Details:
 - [x] **M0 — Foundations.** Monorepo, provisional schema, OCR interface
   with a fake provider, validation checks, catalog matching, eval harness
   on synthetic samples, CI.
-- [ ] **M1 — Real receipts.** Confirm the 7-Eleven layout from physical
-  receipts, finalise the schema, label a first redacted set (easy/hard).
-- [ ] **M2 — Local OCR.** OpenThai 2.0 provider from the open weights
-  (done: runs the official runtime in a Python worker, with a disk
-  cache); first OCR-only numbers (CER) on real receipts (not done).
+- [ ] **M1 — Real receipts.** Partly done: two 7-Eleven layouts examined
+  privately and written up as pending schema changes. Not done: apply
+  those changes, and label a first set that can be published redacted.
+- [ ] **M2 — Local OCR.** Done: OpenThai 2.0 provider running the official
+  runtime in a Python worker, disk cache, PDF input, a command to OCR one
+  file, and an OCR-level eval for one labelled receipt. Not done:
+  publishable OCR numbers (CER) on a redacted set.
 - [ ] **M3 — Structuring.** Text LLM structurer with versioned prompts;
   first end-to-end results table.
 - [ ] **M4 — Fallback.** Claude Haiku vision fallback; measure fallback
@@ -160,5 +190,20 @@ installed outside the repository. Details:
 
 ## License
 
-[MIT](LICENSE). The OCR model is a separate work by iApp Technology under
-Apache-2.0 and is not distributed with this repository.
+[MIT](LICENSE).
+
+Third-party work, none of it redistributed here except as noted:
+
+- The OCR model and its Python runtime
+  ([`iapp/OpenThai2.0-OCR-Text`](https://huggingface.co/iapp/OpenThai2.0-OCR-Text),
+  Apache-2.0, by iApp Technology; detector from PaddlePaddle, Apache-2.0)
+  are downloaded by `bun run ocr:setup` into a git-ignored folder.
+- Python packages (OpenVINO, ONNX Runtime, OpenCV, pyclipper, NumPy,
+  pypdfium2) are installed into a local virtual environment from the
+  hash-locked `requirements.txt`, under their own licences.
+- The synthetic test image `evals/dataset/synthetic/images/synthetic-receipt.png`
+  is text rendered with the Sarabun typeface (SIL Open Font License 1.1).
+  The font file itself is not in this repository.
+
+"7-Eleven" and "CP ALL" are trademarks of their owners. This project is
+not affiliated with or endorsed by them.
