@@ -104,8 +104,8 @@ Metric definitions and the label format: [evals/README.md](evals/README.md).
   measured on them is presented here as a result.
 
 A real results table needs two things that do not exist yet: the
-structuring step, and a set of receipts that can be published in redacted
-form.
+structuring step, and a set of receipts the author has the right to
+share, published in redacted form.
 
 ## Privacy
 

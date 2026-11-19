@@ -21,9 +21,12 @@ A third photo, **from 2014**, uses the same old layout as the 2015 one and
 agrees with it, including on the item count. Its label is provisional (not
 yet confirmed by the owner).
 
-All three receipts, their OCR text and their labels are private and are
-not in this repository; nothing below quotes them beyond generic label
-words.
+Every receipt used so far, including the later ones described further
+down, was a third-party image found in a public post, used only locally
+and never committed. Their OCR text and labels are private and are not in
+this repository; nothing below quotes them beyond generic label words.
+Publishable eval data will come from receipts the owner has the right to
+share.
 
 ## Already done (not layout-dependent)
 
