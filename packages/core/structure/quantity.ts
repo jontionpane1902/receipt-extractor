@@ -76,7 +76,13 @@ export function quantityCandidatesFromDropped(
 	return candidates;
 }
 
-export type QuantitySource = "printed" | "dropped" | "deduced";
+/**
+ * Where a quantity came from, highest trust first: "printed" (a kept OCR
+ * line), "dropped" (recovered from a line the OCR backend filtered out),
+ * "deduced" (from an established item count), "inferred" (from the row's
+ * own two amounts; see unit-price.ts).
+ */
+export type QuantitySource = "printed" | "dropped" | "deduced" | "inferred";
 
 /** What is known about one item's quantity before reconciliation. */
 export interface QuantityInput {
