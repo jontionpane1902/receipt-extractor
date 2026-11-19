@@ -1,6 +1,8 @@
 {
 	"name": "receipt-extractor",
+	"description": "Thai convenience-store receipt extractor: OCR, deterministic validation and evals (7-Eleven Thailand first).",
 	"private": true,
+	"license": "MIT",
 	"type": "module",
 	"workspaces": [
 		"packages/*",
