@@ -303,6 +303,35 @@ describe("evaluateOcrAgainstLabel (invented receipt)", () => {
 		expect(report.quantity_if_pieces.status).toBe("unverified");
 	});
 
+	test("a unit price without its marker is accepted only when qty × it = amount", async () => {
+		// Row 3 of the invented receipt: "@12.00" read as "812.00".
+		const misread: OcrResult = {
+			...ocr,
+			lines: ocr.lines.map((l) =>
+				l.text === "@12.00" ? { ...l, text: "812.00" } : l,
+			),
+		};
+		const ok = await evaluateOcrAgainstLabel(label, misread, NOW);
+		expect(ok.items[1]).toMatchObject({
+			ocr_unit_price: 12,
+			unit_price_repair: "leading_character_removed",
+		});
+		expect(ok.checks.filter((c) => c.check === "line_amount")[1]?.status).toBe(
+			"pass",
+		);
+
+		// Without the recovered quantity there is no proof, so no unit price.
+		const noQty = await evaluateOcrAgainstLabel(
+			label,
+			{ ...misread, dropped: [] },
+			NOW,
+		);
+		expect(noQty.items[1]).toMatchObject({
+			ocr_unit_price: null,
+			unit_price_repair: null,
+		});
+	});
+
 	test("layout fit: arithmetic checks run on the label's own values", async () => {
 		const { label_checks } = await evaluateOcrAgainstLabel(label, ocr, NOW);
 		const of = (check: string) => label_checks.filter((c) => c.check === check);

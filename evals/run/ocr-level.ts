@@ -22,6 +22,7 @@ import {
 	quantityCandidatesFromDropped,
 	type Receipt,
 	type ResolvedQuantity,
+	recoverUnitPrice,
 	resolveQuantities,
 	SCHEMA_VERSION,
 	selectTaxIdWindow,
@@ -70,6 +71,8 @@ export interface ItemReading {
 	suffix: string | null;
 	expected_unit_price: number | null;
 	ocr_unit_price: number | null;
+	/** Set when the unit price was accepted by arithmetic, not read with its "@" marker. */
+	unit_price_repair: string | null;
 	expected_qty: number;
 	/** Quantity with the item count as a soft signal (the default rule). */
 	quantity: ResolvedQuantity;
@@ -307,6 +310,18 @@ export async function evaluateOcrAgainstLabel(
 		const reference = graphemes(want.raw_name.normalize("NFC"));
 		const quantity = resolution.quantities[index] ?? unknownQuantity;
 		const quantityIfPieces = ifPieces.quantities[index] ?? unknownQuantity;
+		// "@unit" is rarely read with its marker. Accept the token before the
+		// amount as the unit price only when qty × it = amount.
+		const candidateLine =
+			part && part.rest.length >= 2 ? part.rest.at(-2) : undefined;
+		const recoveredUnit =
+			unitToken || !candidateLine
+				? null
+				: recoverUnitPrice(
+						candidateLine.text,
+						quantity.qty,
+						ocrAmount === null ? null : Math.abs(ocrAmount),
+					);
 		const droppedBest = part
 			? null
 			: (ocr.dropped ?? [])
@@ -346,7 +361,8 @@ export async function evaluateOcrAgainstLabel(
 			],
 			suffix: amountToken?.suffix ?? null,
 			expected_unit_price: want.unit_price,
-			ocr_unit_price: unitToken?.value ?? null,
+			ocr_unit_price: unitToken?.value ?? recoveredUnit?.unit_price ?? null,
+			unit_price_repair: recoveredUnit?.repair ?? null,
 			expected_qty: want.qty,
 			quantity,
 			qty_ok: quantity.qty === want.qty,
