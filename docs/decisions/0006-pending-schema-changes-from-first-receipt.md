@@ -41,6 +41,8 @@ print, not how a receipt is laid out:
 - Labels can mark fields the labeller could not read (`uncertain`).
 - Amount suffixes are a configurable set (N, NP, V), and a suffix letter
   that OCR read as a trailing zero is repaired and flagged.
+- A unit price printed as `@price` whose marker OCR lost or misread is
+  recovered only when quantity × price = amount proves it.
 - The printed item count is a soft signal: the check warns instead of
   failing, and quantity recovery may confirm with it but not deduce from
   it (changed after the 2020 receipt; see row 9).
@@ -161,6 +163,66 @@ Why it is only a proposal:
 Until it exists, the grounding check can be satisfied by text from these
 blocks: small whole numbers there (terms numbered 1 to 3, a rights count,
 a points figure) can ground a quantity or an item count by accident.
+
+## More new-layout facts (second 2020 receipt)
+
+A second new-layout receipt (December 2020, owner-verified label, photo
+and scan) adds:
+
+| # | Observation | Proposed change | Status |
+| --- | --- | --- | --- |
+| D1 | Paid by **e-wallet**: a payment-method row with the amount, then a row holding a long transaction identifier. | `payment.method` already has `wallet`. Add an optional printed method name. The transaction identifier is an e-wallet identifier: never extract it, and mask it in any output. | Pending |
+| D2 | **No cash and no change rows.** | The cash − total = change check is not applicable and must report `skip`, as it does today; for non-cash payment the equivalent check is payment amount = total. | Check to add, pending |
+| D3 | **No subtotal row** when there is no discount. | `subtotal` (B1) must be optional; its check skips when absent. | Folded into B1 |
+| D4 | **Multi-digit quantities** (10 and above) on zero-priced right rows. | None: two-digit quantities survive OCR as ordinary lines, unlike single digits. Quantity is not capped at one digit. | Already handled |
+| D5 | Multi-quantity priced rows print **`@unit price`** before the amount, as on the old layout. OCR never read the `@`: it was lost, read as a letter, or read as a digit glued to the price. | Done in code: the token is accepted as the unit price only when the quantity is known, above 1, and quantity × token = amount (one leading character may be removed). | Implemented; see limits below |
+| D6 | An extra **service line** sits between the member service phone row and the member block. | The end-of-receipt boundary still holds (cut after the first phone-like row), and this line falls below it. | Supports the boundary proposal |
+| D7 | The **member block contains a person's name**, as well as points earned, used and balance. | Strengthens B8: the block is personal data, not just loyalty figures. It must be cut before any text reaches an LLM, a log, a label or a cache that leaves the machine. | Pending with the boundary |
+
+Limit of D5 on this receipt: on both captures the quantity digit of the two
+`@` rows was lost, so the rule had no quantity to prove anything with and
+correctly did nothing. Accepting "amount ÷ token is a whole number of 2 or
+more" would have recovered both the unit price and the quantity on all
+four rows, but it infers the quantity instead of confirming it and is not
+implemented.
+
+## Untested hypothesis: what the new-layout item count counts
+
+From two new-layout receipts only. **Not implemented; the count stays a
+soft signal.**
+
+> Printed count = sum of quantities on all rows **except** rows that grant
+> a right (name starting with สิทธิ์), free-offer rows, and message rows
+> (such as a thank-you line).
+
+| Receipt | Printed count | All pieces | Priced pieces | Hypothesis gives | Fits? |
+| --- | --- | --- | --- | --- | --- |
+| 2020, first | 5 | 8 | 3 | 5 | Yes, with assumptions |
+| 2020, second | 9 | 33 | 9 | 9 | Yes |
+
+On the second receipt the hypothesis and the simpler "pieces on priced
+rows only" give the same answer, so that receipt cannot tell them apart.
+The first receipt is what separates them (priced pieces alone give 3, not
+5), and there the fit depends on things the label marks as uncertain:
+
+- two zero-priced rows that are neither a right nor a thank-you message (a
+  redemption row and a no-bag row) must each count as one item;
+- their names and quantities were not verified by the owner;
+- the discount line, printed with its own quantity, must not count.
+
+So the evidence is one receipt that fits either rule and one that fits
+only this rule under unverified readings. What would falsify it:
+
+- a new-layout receipt where a row starting with สิทธิ์, a free-offer row
+  or a message row is plainly included in the count;
+- a receipt where a zero-priced row of another kind is excluded;
+- the owner correcting the uncertain rows of the first 2020 receipt so
+  that the sum is no longer 5.
+
+What would support it: any new-layout receipt with a zero-priced row that
+is none of the three excluded kinds, with a verified label. If it holds,
+it needs the row kinds of row 1/B6 (`product`, `promotion`, `notice`) to
+be implemented first, since the rule is defined on them.
 
 ## Other chains (out of scope for now)
 
