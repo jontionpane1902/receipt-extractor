@@ -32,9 +32,16 @@ if (values.label === undefined && values.dataset !== "synthetic") {
 	process.exit(2);
 }
 
+/** Short commit id for the run record, or null when git is unavailable. */
 function gitCommit(): string | null {
-	const result = Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"]);
-	return result.success ? result.stdout.toString().trim() : null;
+	try {
+		const result = Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"], {
+			stderr: "ignore",
+		});
+		return result.success ? result.stdout.toString().trim() || null : null;
+	} catch {
+		return null; // git is not installed
+	}
 }
 
 /** Real providers are imported only when asked for, so the default run stays offline. */
