@@ -193,9 +193,16 @@ export class WorkerClient {
 			child.on("exit", (code, signal) => {
 				this.#exited = true;
 				if (this.#closed) return;
+				// A program that cannot be executed is not always reported as a
+				// spawn error: on some platforms the child is forked first and
+				// exits with the shell convention 127 (not found) or 126 (not
+				// executable). Before the worker is ready, that means the same.
+				const neverStarted = !this.#isReady && (code === 127 || code === 126);
 				const error = this.#fail(
 					new WorkerError(
-						`OCR worker exited unexpectedly (${signal ?? `code ${code}`})`,
+						neverStarted
+							? `could not start OCR worker "${program}": not found or not executable (exit code ${code})`
+							: `OCR worker exited unexpectedly (${signal ?? `code ${code}`})`,
 					),
 				);
 				settle(error);

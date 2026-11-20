@@ -147,6 +147,28 @@ describe("worker failures", () => {
 		);
 	});
 
+	test("a spawn failure reported as exit 127 or 126 reads as 'could not start'", async () => {
+		// Some platforms fork first and report a missing or non-executable
+		// program only through the exit code.
+		for (const code of [127, 126]) {
+			const ocr = new OpenThaiLocalProvider({
+				command: ["/bin/sh", "-c", `exit ${code}`],
+			});
+			open.push(ocr);
+			await expect(ocr.recognize(image("a"))).rejects.toThrow(
+				new RegExp(`could not start OCR worker.*exit code ${code}`),
+			);
+		}
+		// Any other early exit is still an unexpected exit.
+		const other = new OpenThaiLocalProvider({
+			command: ["/bin/sh", "-c", "exit 3"],
+		});
+		open.push(other);
+		await expect(other.recognize(image("a"))).rejects.toThrow(
+			/exited unexpectedly \(code 3\)/,
+		);
+	});
+
 	test("startup timeout kills the worker", async () => {
 		const ocr = provider("never-ready", { startupTimeoutMs: 300 });
 		await expect(ocr.recognize(image("a"))).rejects.toThrow(
